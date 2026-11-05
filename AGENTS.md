@@ -47,6 +47,16 @@ D:\data\文档\有道云笔记导出\
 
 **id 命名规则**：用 kebab-case，取笔记标题的英文/拼音简称。如 `JVM工具` → `jvm-tools`，`JVM垃圾回收` → `jvm-gc`。
 
+> **⚠️ 硬性规则：所有产出文件（包括 assets/ 下的 SVG、notes/ 下的 HTML/MD、images/ 下的图片）的文件名必须用英文 kebab-case，禁止使用中文或全角字符。**
+>
+> **原因**：HBuilderX 云打包时，项目中含中文文件名的文件会直接报错"App打包时，项目中文件名不能含有中文或全角字符"，导致打包失败。
+>
+> **示例**：
+> - ❌ `01-JVM分代回收流程.svg`
+> - ✅ `01-jvm-gen-collect.svg`
+>
+> SVG 文件名格式：`{序号}-{英文描述}.svg`，如 `01-jvm-gen-collect.svg`、`02-gc-collector-choice.svg`。
+
 ---
 
 ## 2. 工具链（已验证可用）
@@ -312,7 +322,7 @@ Set-Location $site
 **注意**：
 - 首次运行 npx 会下载 mermaid-cli + puppeteer（Chromium），较慢（1~3 分钟），属正常。
 - 输出 SVG 约 200KB（2200px 宽），高清可放大，浏览器直接打开或 `![](assets/xx.svg)` 嵌入。
-- 文件名用中文 + 序号前缀（`01-`、`02-`…），方便排序。
+- 文件名用英文 kebab-case + 序号前缀（`01-`、`02-`…），方便排序。**禁止用中文文件名**（HBuilderX 云打包会报错）。
 
 ### 6.4 清理
 
