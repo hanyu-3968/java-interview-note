@@ -1,0 +1,172 @@
+<section class="note" data-note-id="springboot" data-note-title="SpringBoot：启动流程与自动装配原理">
+  <p class="tldr">run 七步启动 + 自动装配六步 + 五大特性</p>
+
+  <h2>一、启动流程：SpringApplication.run 七步</h2>
+  <p class="tldr">推类型→加监听→备环境→建上下文→刷新→起容器→跑 Runner</p>
+  <p><mark>SpringApplication.run()</mark> 是 SpringBoot 总入口，从推断应用类型到 Runner 回调，每步职责明确。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>步骤</th><th>动作</th><th>关键产物</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td>推断应用类型</td><td><mark>WebApplicationType</mark></td><td>看门口：Web 还是普通房</td></tr>
+      <tr><td>2</td><td>加载 spring.factories</td><td>监听器、初始化器</td><td>招工：请好监工和师傅</td></tr>
+      <tr><td>3</td><td>解析 application.yml</td><td><mark>Environment</mark></td><td>备料：配置摆上工作台</td></tr>
+      <tr><td>4</td><td>createApplicationContext</td><td>上下文对象</td><td>搭台：建好 IoC 骨架</td></tr>
+      <tr><td>5</td><td>refresh 刷新容器</td><td>Bean 定义、BeanPostProcessor</td><td>开工：定义→实例化→后置</td></tr>
+      <tr><td>6</td><td>启动内嵌 Tomcat</td><td>Servlet 容器</td><td>通水：房子接上水电</td></tr>
+      <tr><td>7</td><td>ApplicationRunner 回调</td><td>业务启动逻辑</td><td>验收：交付后做收尾活</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：监听器（ApplicationListener）监听事件，初始化器（ApplicationContextInitializer）在 refresh 前对上下文做预处理，两者不混。</span></p>
+
+  <h2>二、容器刷新核心：refresh 六阶段</h2>
+  <p class="tldr">后置定义→注册后置→消息源→事件广播→实例化单例→发布就绪</p>
+  <p><mark>refresh</mark> 是 Spring 老方法，SpringBoot 复用它完成 Bean 加载与实例化。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>阶段</th><th>方法</th><th>作用</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td><mark>invokeBeanFactoryPostProcessors</mark></td><td>加载 @Bean 定义</td><td>画图纸：登记零件清单</td></tr>
+      <tr><td>2</td><td>registerBeanPostProcessor</td><td>注册后置处理器</td><td>请质检员：逐个检查</td></tr>
+      <tr><td>3</td><td>initMessageSource</td><td>国际化消息源</td><td>备翻译：多语言文案</td></tr>
+      <tr><td>4</td><td>initApplicationEventMulticaster</td><td>事件广播器</td><td>装大喇叭：事件分发</td></tr>
+      <tr><td>5</td><td><mark>finishBeanFactoryInitialization</mark></td><td>实例化非懒加载单例</td><td>造零件：真正 new 对象</td></tr>
+      <tr><td>6</td><td>finishRefresh</td><td>发布 ContextRefreshedEvent</td><td>敲锣：宣布容器就绪</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：BeanFactoryPostProcessor 改 Bean 定义（refresh 早期），BeanPostProcessor 改 Bean 实例（实例化前后），一个改图纸一个改成品。</span></p>
+
+  <h2>三、自动装配原理：@EnableAutoConfiguration 六步</h2>
+  <p class="tldr">开启→导入→加载候选→条件过滤→注入→用户优先</p>
+  <p>自动装配是 SpringBoot 灵魂，本质是"开启 + 加载候选 + 条件过滤 = 灵活可覆盖"。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>步骤</th><th>机制</th><th>作用</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>①</td><td><mark>@EnableAutoConfiguration</mark></td><td>开启自动配置开关</td><td>按总闸：通电</td></tr>
+      <tr><td>②</td><td>@Import(AutoConfigurationImportSelector.class)</td><td>导入核心加载类</td><td>派采购员：去拉货</td></tr>
+      <tr><td>③</td><td><mark>SpringFactoriesLoader</mark></td><td>读 spring.factories 或 AutoConfiguration.imports</td><td>翻货单：列出候选</td></tr>
+      <tr><td>④</td><td><mark>@Conditional</mark> 过滤</td><td>@ConditionalOnClass / @ConditionalOnMissingBean</td><td>过安检：不合格退货</td></tr>
+      <tr><td>⑤</td><td>配置类解析注入 Bean</td><td>保留下来的类生效</td><td>上架：合格品摆上货架</td></tr>
+      <tr><td>⑥</td><td><mark>@ConditionalOnMissingBean</mark></td><td>用户自定义优先</td><td>让位：顾客自带货优先</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：@ConditionalOnClass 看类路径（能不能装），@ConditionalOnMissingBean 看容器（要不要让位），前者看环境后者看用户。</span></p>
+  <p><span class="supplement">补充：spring.factories 是 2.x 写法（所有配置类塞一个文件），3.x 改用 AutoConfiguration.imports（一行一个全限定名，更清晰）。</span></p>
+
+  <h2>四、对 SpringBoot 的理解：五大特性</h2>
+  <p class="tldr">脚手架+起步依赖+简化配置+内置容器+依赖管理</p>
+  <p>SpringBoot 不是新框架，而是 Spring 的<mark>脚手架</mark>，解决"配置地狱"和"依赖冲突"两大痛点。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>特性</th><th>含义</th><th>解决的痛点</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>① 快速开发脚手架</td><td>开箱即用</td><td>项目搭建慢</td><td>装修样板房：拎包入住</td></tr>
+      <tr><td>② <mark>起步依赖</mark></td><td>starter 一行集成</td><td>依赖版本难配</td><td>套餐：一份全齐</td></tr>
+      <tr><td>③ 简化配置</td><td>约定优于配置</td><td>XML 配置地狱</td><td>默认值：不填就用合理值</td></tr>
+      <tr><td>④ <mark>内置容器</mark></td><td>内嵌 Tomcat</td><td>部署需独立容器</td><td>自带厨房：不用外借灶台</td></tr>
+      <tr><td>⑤ 依赖管理</td><td>版本统一管理</td><td>第三方版本冲突</td><td>总调度：版本统一发号</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：起步依赖（spring-boot-starter-xxx）聚合一组坐标本身不含代码，自动配置（@EnableAutoConfiguration）根据条件注入 Bean，前者管依赖后者管 Bean。</span></p>
+
+  <h2>五、启动原理三阶段</h2>
+  <p class="tldr">初始化招工→事件发令→刷新施工</p>
+  <p>从源码视角，启动可拆成初始化、事件驱动、容器刷新三阶段。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>阶段</th><th>动作</th><th>关键点</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>① 初始化</td><td>读环境变量、spring.factories、初始化器、监听器</td><td>准备扩展点</td><td>备料：工具人到位</td></tr>
+      <tr><td>② 事件驱动</td><td>监听器发布事件、createApplicationContext</td><td>事件触发上下文创建</td><td>发令枪：监工喊开工</td></tr>
+      <tr><td>③ 容器刷新</td><td>refresh 加载自动配置类、解析 @Import</td><td>自动装配在此发生</td><td>施工：图纸落地成房</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：初始化阶段（构造 SpringApplication 时读 spring.factories 拿监听器）≠ 运行阶段（run() 中发布 ApplicationStartedEvent 等事件），前者招工后者开工后发通知。</span></p>
+
+  <h2>六、高频场景题</h2>
+  <p class="tldr">自动装配机制+用户覆盖+启动慢定位+版本演进</p>
+  <h3>"SpringBoot 自动装配是怎么实现的？"</h3>
+  <p>诊断：问机制链路。答六步：开启 → 导入 → 加载 → 过滤 → 注入 → 用户优先。</p>
+  <h3>"为什么我自定义的 Bean 能覆盖自动配置？"</h3>
+  <p>诊断：问 <mark>@ConditionalOnMissingBean</mark> 优先级。自动配置类检测到用户已定义同名 Bean 就跳过注入。</p>
+  <h3>"SpringBoot 启动慢，可能卡在哪一步？"</h3>
+  <p>诊断：问启动流程定位。可能卡在 finishBeanFactoryInitialization（实例化过多 Bean）或自动配置类过多，可用延迟初始化排查。</p>
+  <h3>"spring.factories 和 AutoConfiguration.imports 有什么区别？"</h3>
+  <p>诊断：问版本演进。2.x 用 spring.factories，3.x 改用 AutoConfiguration.imports，一行一个类名更易维护。</p>
+
+  <h2>七、面试回答模板</h2>
+  <p class="tldr">三句话讲清一题：本质→机制→实战</p>
+  <blockquote>
+    <p><strong>自动装配原理：</strong>问题本质是 SpringBoot 如何"零配置"集成第三方组件。机制是 @EnableAutoConfiguration 开启 → SpringFactoriesLoader 加载候选 → @Conditional 按需过滤 → @ConditionalOnMissingBean 保证用户优先。实战中我会用 debug=true 查看生效的自动配置类，用 @ConditionalOnMissingBean 自定义覆盖默认实现。</p>
+  </blockquote>
+  <blockquote>
+    <p><strong>启动流程：</strong>问题本质是 SpringApplication.run 如何把 main 方法变成可运行 Web 应用。机制是推断类型 → 加载监听器 → 准备 Environment → 创建并刷新上下文 → 自动装配 → 启动内嵌 Tomcat → Runner 回调。实战中我会用 ApplicationRunner 做启动后初始化，用 EventListener 监听关键节点做监控。</p>
+  </blockquote>
+  <blockquote>
+    <p><strong>对 SpringBoot 的理解：</strong>问题本质是 SpringBoot 解决了什么问题。机制是它通过起步依赖、自动配置、内嵌容器、约定优于配置，把 Spring 从"重型框架"变成"开箱即用脚手架"。实战中我会优先用 starter 集成，用 application.yml 覆盖默认值，需要时再自定义 Bean 覆盖自动配置。</p>
+  </blockquote>
+
+  <h2>八、最后复习：闭眼回忆 8 句</h2>
+  <p class="tldr">七步启动+六阶段刷新+六步装配+五大特性</p>
+  <ol>
+    <li>SpringApplication.run 七步：推类型 → 加监听 → 备环境 → 建上下文 → 刷新 → 起容器 → 跑 Runner。</li>
+    <li>refresh 六阶段：后置处理定义 → 注册后置处理器 → 消息源 → 事件广播 → 实例化单例 → 发布就绪事件。</li>
+    <li>自动装配六步：开启 → @Import 导入 → SpringFactoriesLoader 加载 → @Conditional 过滤 → 注入 → 用户优先。</li>
+    <li>@ConditionalOnClass 看类路径，@ConditionalOnMissingBean 看容器，前者决定能不能装，后者决定要不要让位。</li>
+    <li>spring.factories 是 2.x 写法，3.x 改用 AutoConfiguration.imports，一行一个全限定名。</li>
+    <li>SpringBoot 五大特性：脚手架、起步依赖、简化配置、内置容器、依赖管理。</li>
+    <li>起步依赖管依赖坐标，自动配置管 Bean 注入，两者不混。</li>
+    <li>用户自定义 Bean 能覆盖自动配置，靠的是 @ConditionalOnMissingBean 的让位机制。</li>
+  </ol>
+
+  <h2>九、怎么练才记得住</h2>
+  <p class="tldr">画图+复述+写Starter+对比易混点</p>
+  <ol>
+    <li>画一遍启动流程图：闭眼在纸上画出 run() 七步，标出每步产物，卡住就回去看总图。</li>
+    <li>复述自动装配六步：对着空气讲"开启 → 加载 → 过滤 → 注入 → 让位"，每步举一个注解例子。</li>
+    <li>写一个自定义 Starter：手写 xxx-spring-boot-starter，用 @ConditionalOnMissingBean 演示覆盖。</li>
+    <li>对比易混点：BeanFactoryPostProcessor vs BeanPostProcessor、@ConditionalOnClass vs @ConditionalOnMissingBean、spring.factories vs AutoConfiguration.imports 各写一行区别反复默写。</li>
+  </ol>
+
+  <script type="text/template" id="mindmap-springboot">
+# SpringBoot：启动流程与自动装配原理
+## 启动流程 run 七步
+### 推断应用类型 WebApplicationType
+### 加载 spring.factories 监听器初始化器
+### 解析 application.yml 准备 Environment
+### createApplicationContext 创建上下文
+### refresh 刷新容器
+### 启动内嵌 Tomcat
+### ApplicationRunner 回调
+## 容器刷新 refresh 六阶段
+### invokeBeanFactoryPostProcessors 加载 Bean 定义
+### registerBeanPostProcessor 注册后置处理器
+### initMessageSource 国际化
+### initApplicationEventMulticaster 事件广播
+### finishBeanFactoryInitialization 实例化单例
+### finishRefresh 发布就绪事件
+## 自动装配六步
+### @EnableAutoConfiguration 开启
+### @Import 导入 ImportSelector
+### SpringFactoriesLoader 加载候选
+### @Conditional 条件过滤
+### 配置类解析注入 Bean
+### @ConditionalOnMissingBean 用户优先
+## 五大特性
+### 快速开发脚手架
+### 起步依赖 starter
+### 简化配置 约定优于配置
+### 内置容器 内嵌 Tomcat
+### 依赖管理 版本统一
+## 启动原理三阶段
+### 初始化 读环境变量和 factories
+### 事件驱动 发布事件创建上下文
+### 容器刷新 加载自动配置类
+  </script>
+</section>

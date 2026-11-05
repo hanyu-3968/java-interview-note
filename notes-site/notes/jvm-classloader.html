@@ -1,0 +1,126 @@
+<section class="note" data-note-id="jvm-classloader" data-note-title="JVM类加载与双亲委派">
+
+  <p class="tldr">4 层加载器 + 双亲委派 + 资源加载同链 + SPI/Tomcat 打破。</p>
+
+  <h2>一、类加载机制与类加载器类型</h2>
+  <p class="tldr">Bootstrap → Ext/Platform → App → 自定义，按需动态加载。</p>
+  <p><mark>ClassLoader</mark> 的作用是将 class 文件加载到 JVM 虚拟机中，程序就可以正确运行。但 JVM 启动时并不会一次性加载所有 class 文件，而是<mark>根据需要动态加载</mark>。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>类加载器</th><th>层级</th><th>加载范围</th><th>实现语言</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>BootstrapClassLoader</mark></td><td>最顶层</td><td>核心类库（<code>lib</code> 下的 Jar 包和 class 文件）</td><td>C++ 实现</td></tr>
+      <tr><td><mark>ExtentionClassLoader</mark></td><td>第二层</td><td><code>%JAVA_HOME%/lib/ext</code> 下的 jar 包和 class 类</td><td>Java</td></tr>
+      <tr><td><mark>AppClassLoader</mark>（SystemAppClass）</td><td>第三层</td><td>当前应用的 classpath 的所有类</td><td>Java</td></tr>
+      <tr><td><mark>自定义类加载器</mark></td><td>第四层</td><td>开发者自定义加载路径</td><td>Java</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：JDK 9+ 把 ExtClassLoader 改名为 PlatformClassLoader（平台类加载器），加载范围也调整了。面试时如果提到 JDK 9 模块化，要说"ExtClassLoader 在 JDK 9 后变成 PlatformClassLoader"。</span></p>
+
+  <h2>二、双亲委派机制</h2>
+  <p class="tldr">先委托父加载，父找不到子才自己加载。</p>
+  <p>核心原则：<mark>遇到加载请求，先把这个请求交给父加载器加载，只有父类加载器找不到 class 文件，子类才可以加载</mark>。</p>
+  <p>主要体现在 ClassLoader 的 <code>loadClass()</code> 方法中：</p>
+  <ol>
+    <li>先检查是否已经被加载过。</li>
+    <li>若没有加载则调用父类加载器的 <code>loadClass()</code> 方法。</li>
+    <li>若父类加载器为空则默认使用启动类加载器作为父类加载器。</li>
+    <li>如果父类加载器加载失败，抛出 <code>ClassNotFoundException</code> 异常后，调用自己的 <code>findClass()</code> 方法进行加载。</li>
+  </ol>
+  <p><mark>双亲委派的作用</mark>：</p>
+  <ul>
+    <li><strong>安全</strong>：防止核心类被恶意替换（自定义 <code>java.lang.String</code> 会被 Bootstrap 加载真正的 String）。</li>
+    <li><strong>唯一性</strong>：同一个类只会被加载一次，避免类的重复加载。</li>
+  </ul>
+  <p><span class="supplement">补充：双亲委派是"逻辑上的父子关系"，不是"继承关系"。类加载器通过 parent 字段持有父加载器引用，loadClass() 先委托 parent 加载，不是通过 extends 继承。</span></p>
+
+  <h2>三、资源加载的委派流程</h2>
+  <p class="tldr">getResourceAsStream 走同一条委派链。</p>
+  <p>以 <code>ParseKeyUtils.class.getClassLoader().getResourceAsStream("config/private.key")</code> 为例：</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>步骤</th><th>发生什么</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1. 发起请求</td><td>ParseKeyUtils 类由 <mark>AppClassLoader</mark> 加载，所以这次资源查找请求也是由 AppClassLoader 发起</td></tr>
+      <tr><td>2. 向上委托（第一步）</td><td>AppClassLoader 收到请求后，不会立刻去 classpath 里找。它先把请求委托给它的父加载器 <mark>PlatformClassLoader</mark>（JDK 9 以前是 ExtClassLoader）</td></tr>
+      <tr><td>3. 继续向上（第二步）</td><td>PlatformClassLoader 收到请求后，也不会自己去找，而是继续向上委托给自己的父加载器——<mark>BootstrapClassLoader</mark></td></tr>
+      <tr><td>4. 父加载器查找（第三步）</td><td>BootstrapClassLoader 检查自己负责的路径（JVM 核心库 rt.jar 等），看有没有 <code>config/private.key</code>。因为配置文件在项目的 classpath 下，不在 JVM 核心库里，所以它找不到，返回 null</td></tr>
+      <tr><td>5. 逐级向下查找（第四步）</td><td>BootstrapClassLoader 返回 null 后，PlatformClassLoader 也在它自己的负责路径里找一遍，也找不到，返回 null。最终请求回到 <mark>AppClassLoader</mark>，它去自己的负责路径（项目的 classpath，即 target/classes 或 JAR 包内）查找，成功找到并返回文件流</td></tr>
+    </tbody>
+  </table>
+  <p>速记：资源加载和类加载走同一条委派链——子加载器发起 → 一路向上委托到 Bootstrap → 逐级向下查找，找到就返回，找不到返回 null。</p>
+
+  <h2>四、类加载的时机</h2>
+  <p class="tldr">new、静态访问、反射、子类先父类、主类。</p>
+  <p>JVM 不会一次性加载所有类，而是按需动态加载。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>触发时机</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>实例化</td><td><code>new</code> 创建对象实例时</td></tr>
+      <tr><td>静态访问</td><td>访问类的静态字段（非 final）或调用静态方法</td></tr>
+      <tr><td>反射</td><td>通过反射访问类（<code>Class.forName</code>）</td></tr>
+      <tr><td>初始化子类</td><td>初始化类时如果父类还没初始化，先初始化父类</td></tr>
+      <tr><td>主类</td><td>JVM 启动时加载包含 main 方法的类</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：类加载分为加载、链接（验证、准备、解析）、初始化五个阶段。"类加载的时机"指的是初始化时机，不是加载时机——加载可以提前，但初始化必须等到真正使用时。</span></p>
+
+  <h2>五、打破双亲委派机制</h2>
+  <p class="tldr">SPI 用上下文类加载器，Tomcat 用 WebAppClassLoader。</p>
+  <p>双亲委派不是强制的，某些场景需要打破它实现灵活加载。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>场景</th><th>如何打破</th><th>原因</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>SPI 机制（JDBC）</mark></td><td>用线程上下文类加载器（Thread Context ClassLoader）</td><td>Bootstrap 加载 SPI 接口（如 <code>java.sql.Driver</code>），但实现类在 classpath 下，Bootstrap 看不到，需要用 AppClassLoader 反向加载</td></tr>
+      <tr><td><mark>Tomcat</mark></td><td>每个 Web 应用有自己的 WebAppClassLoader，先自己加载再委派父</td><td>同一 Tomcat 部署多个 Web 应用，可能依赖同一个库的不同版本，必须隔离</td></tr>
+      <tr><td>热部署</td><td>自定义类加载器，重写 <code>loadClass()</code></td><td>每次修改类后用新类加载器重新加载，实现不重启更新</td></tr>
+      <tr><td>OSGi</td><td>网状类加载结构</td><td>模块化，每个模块有自己的类加载器，互相独立</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：打破双亲委派不是"不用双亲委派"，而是"在特定场景下调整加载顺序"。Tomcat 的 WebAppClassLoader 对自己 Web 应用内的类先自己加载（打破），但对 JDK 核心类仍然委派给 Bootstrap（保留）——是"部分打破"。</span></p>
+
+  <h2>六、面试串联话术</h2>
+  <p class="tldr">层级→委派→资源→打破一气呵成。</p>
+  <blockquote>
+    <p>JVM 类加载器分四层：BootstrapClassLoader（C++ 实现，加载核心类库）、ExtClassLoader（加载 ext 目录，JDK 9 后改名 PlatformClassLoader）、AppClassLoader（加载 classpath）、自定义类加载器。</p>
+    <p>加载类时走双亲委派：子加载器先委托父加载器加载，父加载器找不到子加载器才自己加载。体现在 loadClass() 方法中——先检查是否已加载，再委托父加载器，父加载失败抛 ClassNotFoundException 后才调用自己的 findClass()。作用是安全（防止核心类被替换）和唯一性（同一类只加载一次）。</p>
+    <p>资源加载（getResourceAsStream）走同一条委派链。某些场景需要打破双亲委派：SPI 机制用线程上下文类加载器反向加载实现类，Tomcat 用 WebAppClassLoader 实现多应用依赖隔离。打破是"部分打破"，核心类仍委派 Bootstrap。</p>
+  </blockquote>
+
+  <script type="text/template" id="mindmap-jvm-classloader">
+# JVM类加载
+## 4层类加载器
+### BootstrapClassLoader C++核心库
+### ExtClassLoader ext目录
+### AppClassLoader classpath
+### 自定义类加载器
+## 双亲委派机制
+### 先委托父加载器
+### 父找不到子才自己加载
+### loadClass方法四步
+### 安全防核心类被替换
+### 唯一性同类只加载一次
+## 资源加载委派流程
+### AppClassLoader发起
+### 向上委托Platform
+### 继续向上Bootstrap
+### 逐级向下查找返回
+## 类加载时机
+### new实例化
+### 静态访问
+### 反射Class.forName
+### 初始化子类先父类
+### 主类main方法
+## 打破双亲委派
+### SPI线程上下文类加载器
+### Tomcat WebAppClassLoader
+### 热部署自定义类加载器
+### OSGi网状结构
+  </script>
+</section>

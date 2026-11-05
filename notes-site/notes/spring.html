@@ -1,0 +1,155 @@
+<section class="note" data-note-id="spring" data-note-title="Spring核心知识点">
+
+  <p class="tldr">事件驱动 + Bean 扩展点 + 事务传播/隔离 + 三级缓存 + 自动配置。</p>
+
+  <h2>一、ApplicationListener · 事件驱动解耦</h2>
+  <p class="tldr">单体应用内解耦最优解，轻量无依赖。</p>
+  <p><mark>轻量级解耦的"最优解"</mark>。事件驱动模式遵循开闭原则（对扩展开放，对修改关闭），在业务复杂的项目中，能有效降低核心模块的修改频率和风险。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>对比维度</th><th>ApplicationListener（Spring 事件）</th><th>接口调用（同步/异步）</th><th>消息队列（MQ）</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>核心优势</td><td><mark>极轻量</mark>，无额外依赖，代码耦合度低</td><td>实现简单直接，适合强依赖的同步场景</td><td>可靠性极高，支持重试、削峰填谷，系统间彻底解耦</td></tr>
+      <tr><td>适用场景</td><td>单体应用内部的模块解耦，如启动初始化、简单的业务联动</td><td>同步 RPC 调用，需要实时获取返回值</td><td>分布式系统间的异步通信，如跨服务的订单、支付通知</td></tr>
+      <tr><td>性能与资源</td><td>性能最高，基于 JVM 内存</td><td>依赖网络 IO，同步调用会阻塞线程</td><td>性能较高，但需独立部署 Broker，有额外运维成本</td></tr>
+      <tr><td>可靠性</td><td>一般，异常会影响主流程；若需重试，需自行实现</td><td>同步调用可靠性高；异步回调失败需自行处理</td><td><mark>最高</mark>，有持久化和重试机制，失败消息可回溯</td></tr>
+      <tr><td>系统依赖</td><td>无，仅依赖 Spring 框架</td><td>无，仅依赖服务提供方</td><td>需额外搭建和维护 MQ 集群</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：ApplicationListener 是单体应用内的解耦方案，不是分布式解耦。跨服务异步通信还是要用 MQ，ApplicationListener 只解决同一 JVM 内模块间的耦合。</span></p>
+
+  <h2>二、Bean 扩展点三剑客</h2>
+  <p class="tldr">BFPP 改图纸，BPP 改成品，Aware 拿容器。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>特性</th><th>BeanFactoryPostProcessor</th><th>BeanPostProcessor</th><th>ApplicationContextAware</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>执行时机</td><td>Bean 定义加载后，<mark>实例化前</mark></td><td>Bean 实例化后，<mark>初始化前后</mark></td><td>Bean 实例化 + 属性注入后，初始化前</td></tr>
+      <tr><td>操作对象</td><td><mark>BeanDefinition</mark>（元数据）</td><td><mark>Bean 实例</mark>（对象）</td><td>当前 Bean 自身</td></tr>
+      <tr><td>执行次数</td><td>全局一次</td><td>每个 Bean 都会触发</td><td>每个实现类触发一次</td></tr>
+      <tr><td>典型用途</td><td>修改 Bean 定义、占位符解析</td><td><mark>AOP 代理</mark>、属性校验、包装增强</td><td>获取容器资源（ApplicationContext 等）</td></tr>
+      <tr><td>是否常见</td><td>较少直接写（框架内部用得多）</td><td>较常见（尤其是 AOP 场景）</td><td>较常见（尤其写工具类）</td></tr>
+    </tbody>
+  </table>
+  <p><mark>什么时候必须用 BeanPostProcessor</mark>：</p>
+  <ul>
+    <li><code>@Aspect</code> 只能拦截方法调用，无法替换掉整个 Bean。但 BeanPostProcessor 可以：返回一个完全不同的对象（比如 Mock 对象用于测试）、为 Bean 动态添加新的接口实现。</li>
+    <li>如果只是想给某个方法加日志、监控、权限校验，用 <code>@Aspect</code> 就够了，简单直接。</li>
+    <li>如果需要修改 Bean 本身、替换掉它、或者在它初始化之前动手脚，那就必须用到 BeanPostProcessor。</li>
+  </ul>
+  <p><span class="supplement">补充：BeanFactoryPostProcessor 操作的是 BeanDefinition（元数据，还没实例化），BeanPostProcessor 操作的是 Bean 实例（已经 new 出来了）。前者改"图纸"，后者改"成品"。</span></p>
+
+  <h2>三、事务的传播机制</h2>
+  <p class="tldr">REQUIRED 同生共死，REQUIRES_NEW 互不影响，NESTED 局部自治。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>传播行为</th><th>口诀</th><th>含义</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>REQUIRED</mark></td><td>有我就加入，没有我就建。同生共死（一起回滚）</td><td>有事务就加入，没有就新建；与外层事务一起回滚</td></tr>
+      <tr><td><mark>REQUIRES_NEW</mark></td><td>不管有没有，我都要自己开。你是你，我是我（互不影响）</td><td>总是新建事务，外层事务挂起；内外互不影响</td></tr>
+      <tr><td><mark>NESTED</mark></td><td>我要做你儿子，我回滚不影响你，但你回滚我得死。局部自治（可局部回滚）</td><td>嵌套事务，子事务可独立回滚（保存点），但外层回滚子事务也回滚</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：REQUIRES_NEW 和 NESTED 都能"局部回滚"，但机制不同。REQUIRES_NEW 是完全独立的新事务（外层挂起），NESTED 是嵌套子事务（基于保存点，外层回滚子事务也回滚）。</span></p>
+
+  <h2>四、事务的隔离级别</h2>
+  <p class="tldr">MySQL 默认 RR 解幻读，大厂常用 RC 高并发。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>隔离级别</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>READ UNCOMMITTED（读未提交）</td><td>最低隔离，有脏读风险，<mark>千万别用</mark></td></tr>
+      <tr><td>READ COMMITTED（读已提交）</td><td>解决脏读，但有不可重复读；<mark>互联网大厂常用</mark></td></tr>
+      <tr><td><mark>REPEATABLE READ（可重复读）</mark></td><td>解决不可重复读，<mark>MySQL 默认</mark></td></tr>
+      <tr><td>SERIALIZABLE（串行化）</td><td>最高隔离，性能灾难，<mark>千万别用</mark></td></tr>
+    </tbody>
+  </table>
+  <p><mark>关键加分点</mark>：虽然 SQL 标准说 REPEATABLE READ 允许幻读，但 MySQL 的 InnoDB 通过<mark>间隙锁（Gap Lock）+ MVCC</mark>，在 RR 级别下已经能完全解决幻读。因此 MySQL 默认的 RR 实际上达到了接近串行化的一致性，并发性能却好得多。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>选型</th><th>适用场景</th><th>原因</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>MySQL 默认 RR</td><td>金融、交易等强一致性场景</td><td>间隙锁 + MVCC 解决幻读，接近串行化</td></tr>
+      <tr><td>互联网大厂常用 RC</td><td>高并发互联网业务</td><td>RC 没有间隙锁，锁竞争更少，并发吞吐量更高；代价是允许不可重复读（通常业务能接受）</td></tr>
+      <tr><td>千万别用</td><td>READ UNCOMMITTED、SERIALIZABLE</td><td>脏读风险 / 性能灾难</td></tr>
+    </tbody>
+  </table>
+
+  <h2>五、Spring 如何解决 Bean 的循环依赖</h2>
+  <p class="tldr">三级缓存：成品、半成品、ObjectFactory 工厂。</p>
+  <p><mark>三级缓存</mark>解决循环依赖，核心是"半成品提前暴露"。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>缓存层级</th><th>名称</th><th>存放内容</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>一级缓存</mark></td><td>singletonObjects</td><td>存放成品，即完全初始化好的单例 Bean</td></tr>
+      <tr><td><mark>二级缓存</mark></td><td>earlySingletonObjects</td><td>存放半成品，即已实例化但未完全初始化，被提前暴露出来供其他 Bean 依赖的引用</td></tr>
+      <tr><td><mark>三级缓存</mark></td><td>singletonFactories</td><td>存放工厂（ObjectFactory），其 <code>getObject()</code> 方法封装了生成最终被暴露的引用（原始对象或 AOP 代理对象）的逻辑</td></tr>
+    </tbody>
+  </table>
+  <p>当出现循环依赖时，Bean A 通过三级缓存的工厂，在被依赖的那一刻才决定要暴露原始对象还是代理对象，从而解决了 AOP 代理与循环依赖共存的问题。三级缓存确保了 AOP 代理在循环依赖场景下也能被正确创建和注入。</p>
+  <p><span class="supplement">补充：三级缓存不是为了"三级"，而是为了延迟决定暴露原始对象还是代理对象。如果没有 AOP，二级缓存就够了；三级缓存的 ObjectFactory 在被调用时才决定生成原始对象还是代理，保证循环依赖下 AOP 代理也能正确注入。</span></p>
+
+  <h2>六、Spring Boot 自动配置原理</h2>
+  <p class="tldr">注解组合 → 选择器读配置 → 条件注解按需加载。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>步骤</th><th>发生什么</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td>核心注解 <mark><code>@SpringBootApplication</code></mark> 组合了 <code>@EnableAutoConfiguration</code></td></tr>
+      <tr><td>2</td><td><code>@EnableAutoConfiguration</code> 通过 <code>@Import(AutoConfigurationImportSelector.class)</code> 导入选择器</td></tr>
+      <tr><td>3</td><td>选择器读取所有 Jar 包中 <code>META-INF/spring.factories</code> 或 <code>META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports</code>（Spring Boot 2.7+）文件里的配置类全路径</td></tr>
+      <tr><td>4</td><td>加载这些配置类时，配合 <mark><code>@ConditionalOnClass</code></mark>（类路径存在某类）、<mark><code>@ConditionalOnMissingBean</code></mark>（容器无某 Bean）等条件注解，按需加载</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充（踩坑经验）：我曾经排包冲突，发现引入的第三方的 RedisAutoConfiguration 覆盖了默认的，导致连接池报错。解决方法是 @SpringBootApplication(exclude = RedisAutoConfiguration.class) 手动排除它。自动配置不是"全量加载"，而是"按需加载"——条件注解决定哪些配置类生效。</span></p>
+
+  <h2>七、面试串联话术</h2>
+  <p class="tldr">事件→扩展点→事务→循环依赖→自动配置一气呵成。</p>
+  <blockquote>
+    <p>Spring 事件驱动用 ApplicationListener，在单体应用内做模块解耦，极轻量无依赖；跨服务异步才用 MQ。</p>
+    <p>Bean 扩展点三剑客：BeanFactoryPostProcessor 改 BeanDefinition（图纸），BeanPostProcessor 改 Bean 实例（成品，AOP 代理用它），ApplicationContextAware 获取容器资源。需要替换整个 Bean 或动态加接口必须用 BeanPostProcessor，方法加日志用 @Aspect 就够。</p>
+    <p>事务传播 REQUIRED 同生共死、REQUIRES_NEW 互不影响、NESTED 局部自治；隔离级别 MySQL 默认 RR（间隙锁+MVCC 解幻读），大厂常用 RC 高并发。循环依赖靠三级缓存——一级成品、二级半成品、三级 ObjectFactory 工厂延迟决定原始还是代理。</p>
+    <p>Spring Boot 自动配置是 @SpringBootApplication → @EnableAutoConfiguration → AutoConfigurationImportSelector 读 spring.factories → @Conditional 按需加载，不是全量加载。</p>
+  </blockquote>
+
+  <script type="text/template" id="mindmap-spring">
+# Spring核心知识点
+## 事件驱动ApplicationListener
+### 单体应用内解耦
+### 极轻量无依赖
+### 跨服务用MQ
+## Bean扩展点三剑客
+### BeanFactoryPostProcessor改BeanDefinition
+### BeanPostProcessor改Bean实例
+### ApplicationContextAware拿容器
+### AOP代理用BPP
+## 事务传播机制
+### REQUIRED同生共死
+### REQUIRES_NEW互不影响
+### NESTED局部自治保存点
+## 事务隔离级别
+### MySQL默认RR
+### 间隙锁+MVCC解幻读
+### 大厂常用RC高并发
+### 别用读未提交和串行化
+## 循环依赖三级缓存
+### 一级singletonObjects成品
+### 二级earlySingletonObjects半成品
+### 三级singletonFactories工厂
+### 延迟决定原始还是代理
+## Spring Boot自动配置
+### @SpringBootApplication组合
+### @EnableAutoConfiguration
+### AutoConfigurationImportSelector
+### spring.factories按需加载
+### @ConditionalOnClass条件注解
+  </script>
+</section>

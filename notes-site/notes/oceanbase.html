@@ -1,0 +1,220 @@
+<section class="note" data-note-id="oceanbase" data-note-title="OceanBase：原生分布式数据库与MySQL迁移">
+
+  <p class="tldr">单机分布式一体化 + Paxos 强一致 + LSM-Tree 高压缩 + 兼容 MySQL。</p>
+
+  <h2>一、OceanBase 是什么</h2>
+  <p class="tldr">蚂蚁自研原生分布式库，一套内核两种部署。</p>
+  <p>蚂蚁集团 2010 年自研的<mark>原生分布式数据库</mark>，核心设计理念是<mark>单机分布式一体化</mark>——一套内核代码同时支持集中式单机和分布式集群部署。</p>
+  <ul>
+    <li>经历淘宝双十一超大规模并发和金融行业核心系统考验</li>
+    <li>打破"集中式或分布式二选一"界限，可从小规模单机起步，业务增长后<mark>无需修改代码</mark>平滑扩容成分布式集群</li>
+    <li>一套系统同时处理事务处理（TP）、实时分析（AP）甚至 AI 应用</li>
+  </ul>
+  <p><span class="supplement">补充："单机分布式一体化"是同一套内核两种部署形态，不是两套代码；也不是在 MySQL 上加代理层的分布式中间件方案，OB 是原生分布式数据库。</span></p>
+
+  <h2>二、核心组件与架构</h2>
+  <p class="tldr">三大组件 + Shared-Nothing + LSM-Tree + Paxos。</p>
+
+  <h3>三大核心组件</h3>
+  <table class="cmp">
+    <thead>
+      <tr><th>组件</th><th>定位</th><th>核心职责</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><mark>OBServer</mark></td>
+        <td>最核心进程</td>
+        <td>每台服务器一个 <code>observer</code> 进程，集成 SQL 引擎、事务引擎、存储引擎，负责节点间通信和负载均衡</td>
+      </tr>
+      <tr>
+        <td><mark>Zone</mark></td>
+        <td>可用区（逻辑概念）</td>
+        <td>通常对应一个机房或可用区，一个集群多 Zone，数据副本分布在不同 Zone 实现<mark>机房级容灾</mark></td>
+      </tr>
+      <tr>
+        <td><mark>Tenant</mark></td>
+        <td>租户（资源隔离单位）</td>
+        <td>逻辑上是一个独立数据库实例，拥有独立 CPU/内存/IO，多租户整合小库提升资源利用率</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>系统架构四层</h3>
+  <table class="cmp">
+    <thead>
+      <tr><th>层</th><th>机制</th><th>关键能力</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>整体架构</td>
+        <td><mark>Shared-Nothing</mark> 无共享</td>
+        <td>节点间完全对等，无单点瓶颈</td>
+      </tr>
+      <tr>
+        <td>存储层</td>
+        <td><mark>LSM-Tree</mark></td>
+        <td>数据先写内存 MemTable，达阈值转储为只读 SSTable，列存编码 + 通用压缩，存储成本省 70%~90%</td>
+      </tr>
+      <tr>
+        <td>复制层</td>
+        <td><mark>Paxos 共识协议</mark></td>
+        <td>多副本同步 Redo 日志，每分区一个 Leader 读写 + 多个 Follower 备份，Leader 故障 <mark>RTO&lt;8s、RPO=0</mark></td>
+      </tr>
+      <tr>
+        <td>SQL 层</td>
+        <td>解析→优化→执行</td>
+        <td>Parser→Resolver→Transformer→Optimizer→代码生成→Executor，支持本地/远程/分布式三种执行计划，带 Plan Cache</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：Zone 是物理/机房维度的容灾单元，Tenant 是逻辑/资源维度的隔离单元，二者正交——一个 Tenant 的数据副本会分布在多个 Zone。MemTable 在内存可写，SSTable 在磁盘只读，转储后靠合并（Compaction）清理旧版本。</span></p>
+
+  <h2>三、相比 MySQL 的六大优点</h2>
+  <p class="tldr">架构/高可用/HTAP/存储/多租户/兼容性全面领先。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>OceanBase</th><th>MySQL</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>架构</td>
+        <td>原生分布式，水平扩展对应用透明</td>
+        <td>集中式，大规模扩展靠分库分表，对应用不透明、运维复杂</td>
+      </tr>
+      <tr>
+        <td>高可用</td>
+        <td>Paxos 原生多副本，<mark>RPO=0、RTO&lt;8s</mark>，支持城市级故障自动恢复</td>
+        <td>依赖主从复制 + 故障切换，通常需人工介入，存在数据丢失风险</td>
+      </tr>
+      <tr>
+        <td>混合负载</td>
+        <td><mark>HTAP</mark> 一套系统同时支持高并发 TP 和复杂实时 AP，无需数据搬迁</td>
+        <td>分析能力弱，通常需同步到单独 AP 系统</td>
+      </tr>
+      <tr>
+        <td>存储成本</td>
+        <td>LSM-Tree + 高效压缩，存储成本降 <mark>70%~90%</mark></td>
+        <td>InnoDB 压缩比相对较低，存储成本更高</td>
+      </tr>
+      <tr>
+        <td>多租户</td>
+        <td>原生支持，资源隔离好，可整合多个数据库实例</td>
+        <td>无原生多租户概念</td>
+      </tr>
+      <tr>
+        <td>兼容性</td>
+        <td>高度兼容 MySQL 5.7/8.0 语法和协议，迁移改造成本低</td>
+        <td>—</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：RPO=0 表示零数据丢失，RTO&lt;8s 表示 8 秒内恢复服务，两个指标衡量不同维度。HTAP 是一套引擎一套数据同时跑 TP 和 AP，不是 TP 库同步到 AP 库的 ETL 方案。</span></p>
+
+  <h2>四、如何从 MySQL 迁移到 OceanBase</h2>
+  <p class="tldr">OMS 四阶段，应用层只改配置不改代码。</p>
+  <p>核心工具是 <mark>OceanBase 迁移服务（OMS）</mark>，支持不停机或极短停机的平滑迁移。</p>
+
+  <h3>迁移四阶段</h3>
+  <table class="cmp">
+    <thead>
+      <tr><th>阶段</th><th>名称</th><th>关键动作</th><th>易踩坑点</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>一</td>
+        <td>前期评估与准备</td>
+        <td>检查表结构（<mark>每表必须有显式主键</mark>）；梳理视图/触发器/存储过程/外键；确认 <code>utf8mb4</code> 和 <code>sql_mode</code> 一致</td>
+        <td>无主键表性能急剧下降</td>
+      </tr>
+      <tr>
+        <td>二</td>
+        <td>应用层最小化改造</td>
+        <td>仅改配置，不修改 Java 业务逻辑和 SQL；替换 JDBC 驱动；改连接 URL 和用户名格式</td>
+        <td>用户名格式特殊</td>
+      </tr>
+      <tr>
+        <td>三</td>
+        <td>数据迁移实操</td>
+        <td>中小规模停机用 <code>mysqldump</code> 导出 + <code>obclient</code> 导入；海量数据或零停机用 OMS 全量 + 增量 + 无缝切换</td>
+        <td>选错工具导致停机过长</td>
+      </tr>
+      <tr>
+        <td>四</td>
+        <td>验证与上线</td>
+        <td>数据一致性校验、业务回归测试、正式上线切换连接地址</td>
+        <td>跳过校验直接上线</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>连接配置改造细节</h3>
+  <table class="cmp">
+    <thead>
+      <tr><th>项</th><th>MySQL 原配置</th><th>OB 方案 A（推荐）</th><th>OB 方案 B</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>JDBC 驱动</td>
+        <td><code>mysql-connector-java</code></td>
+        <td><code>mysql-connector-java</code>（不变）</td>
+        <td><code>oceanbase-client</code></td>
+      </tr>
+      <tr>
+        <td>URL 前缀</td>
+        <td><code>jdbc:mysql://</code></td>
+        <td><code>jdbc:mysql://</code>（不变）</td>
+        <td><code>jdbc:oceanbase://</code></td>
+      </tr>
+      <tr>
+        <td>用户名</td>
+        <td><code>root</code></td>
+        <td><code>root@my_tenant#obtest</code></td>
+        <td><code>root@my_tenant#obtest</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <p>用户名格式：<mark>用户名@租户名#集群名</mark>，如 <code>root@my_tenant#obtest</code>。</p>
+  <p><span class="supplement">补充：方案 A 沿用 MySQL 驱动、URL 不变，改造成本最低，推荐；方案 B 用官方驱动性能更优但需改 URL 前缀。"无主键表必须补主键"不是 OB 限制不能建表，而是无主键表在分布式环境下性能急剧下降，迁移前必须补上。</span></p>
+
+  <h2>五、面试回答模板</h2>
+  <p class="tldr">三句话讲清 OceanBase 是什么、机制、实战。</p>
+  <blockquote>
+    <p><strong>问题本质是</strong>：OceanBase 是蚂蚁自研的原生分布式数据库，采用单机分布式一体化架构，高度兼容 MySQL 和 Oracle，一套系统同时支持 TP 和 AP。</p>
+    <p><strong>机制是</strong>：三大组件 OBServer/Zone/Tenant + Shared-Nothing 架构，存储用 LSM-Tree 高压缩（省 70%~90%），复制用 Paxos 多副本强一致（RPO=0、RTO&lt;8s 自动选主）。</p>
+    <p><strong>实战中我会</strong>：从 MySQL 迁移走 OMS 四阶段——前期补主键、应用层只改驱动配置、数据用 mysqldump 或 OMS 迁移、最后校验上线，业务代码零修改。</p>
+  </blockquote>
+
+  <script type="text/template" id="mindmap-oceanbase">
+# OceanBase：原生分布式数据库与MySQL迁移
+## 是什么
+### 蚂蚁2010自研
+### 单机分布式一体化
+### 一套内核两种部署
+### TP+AP+AI一套系统
+## 三大核心组件
+### OBServer单进程三引擎
+### Zone机房级容灾
+### Tenant资源隔离单位
+## 系统架构四层
+### Shared-Nothing无共享
+### LSM-Tree高压缩省70%
+### Paxos多副本强一致
+### SQL六段流水线带PlanCache
+## vs MySQL六大优点
+### 架构透明水平扩展
+### 高可用RPO=0 RTO小于8s
+### HTAP一套系统
+### 存储省70到90%
+### 原生多租户
+### 高度兼容MySQL
+## MySQL迁移四阶段
+### 前期评估补主键
+### 应用层改驱动配置
+### 数据迁移dump或OMS
+### 校验上线
+## 关键配置
+### 用户名格式用户名@租户名#集群名
+### 方案A沿用MySQL驱动
+### 方案B官方oceanbase-client
+  </script>
+</section>

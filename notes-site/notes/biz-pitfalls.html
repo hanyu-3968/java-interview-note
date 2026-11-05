@@ -1,0 +1,200 @@
+<section class="note" data-note-id="biz-pitfalls" data-note-title="业务开发常见错误：线程安全、加锁、HTTP与事务">
+
+  <p class="tldr">线程池复用是根因，五大坑各有修复手段。</p>
+
+  <h2>一、线程安全：ThreadLocal 与 ConcurrentHashMap</h2>
+  <p class="tldr">ThreadLocal 要 remove，批量操作要原子。</p>
+  <p>Web 服务器（如 <mark>Tomcat</mark>）用<mark>线程池复用线程</mark>处理请求，没有显式 <code>new Thread</code> 也会有线程安全问题——线程创建昂贵，请求结束后线程不销毁，会被下一个请求复用。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>坑点</th><th>触发条件</th><th>后果</th><th>修复</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><mark>ThreadLocal 未 remove</mark></td>
+        <td>Tomcat 线程池复用线程，请求结束后 ThreadLocal 残留</td>
+        <td>下个请求读到上个请求数据，串号/越权/内存泄漏</td>
+        <td><code>try-finally</code> 中显式 <code>threadLocal.remove()</code></td>
+      </tr>
+      <tr>
+        <td><mark>ConcurrentHashMap 批量非原子</mark></td>
+        <td><code>putAll</code> 等批量操作在并发下被其他线程穿插</td>
+        <td>批量过程非原子，部分写入被覆盖，配置不一致</td>
+        <td>逐 key 用 <code>replaceAll</code>/<code>compute</code>，或显式 <code>synchronized</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：ConcurrentHashMap 的单个 put/compute 是原子的，但 putAll、先 get 后 put 这类"复合操作"不是原子的。线程安全容器 ≠ 所有操作都原子。</span></p>
+
+  <h2>二、加锁问题：粒度、读写与公平锁</h2>
+  <p class="tldr">粒度小、级别对、读写分、公平锁别乱开。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>考量点</th><th>选择</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><mark>锁粒度</mark></td>
+        <td>只为必要代码块加锁，降低锁范围</td>
+        <td>锁代码块而非整个方法</td>
+      </tr>
+      <tr>
+        <td><mark>锁级别</mark></td>
+        <td>共享资源是类级别还是实例级别</td>
+        <td>类资源锁 <code>Class</code>，实例资源锁 <code>this</code> 或具体对象</td>
+      </tr>
+      <tr>
+        <td><mark>读写场景</mark></td>
+        <td>读写比例差异明显时</td>
+        <td><code>ReentrantReadWriteLock</code> 区分读写锁</td>
+      </tr>
+      <tr>
+        <td><mark>悲观/乐观</mark></td>
+        <td>访问冲突激烈还是稀疏</td>
+        <td>激烈用悲观锁（synchronized），稀疏用乐观锁（CAS）</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><mark>ReentrantLock</mark> 和 <mark>ReentrantReadWriteLock</mark> 都提供<mark>公平锁</mark>版本（构造传 <code>true</code>），但任务竞争强时开启公平锁会让性能下降<mark>上百倍</mark>，没有明确需要不要轻易开启。</p>
+  <p><span class="supplement">补充：synchronized 加锁时要弄清共享资源是类级别还是实例级别、会被哪些线程操作；加锁要尽可能只为必要代码块加锁，降低锁粒度。</span></p>
+
+  <h2>三、HTTP 调用：Feign 超时与重试坑</h2>
+  <p class="tldr">超时连读一起配，以 Feign 为准，重试按需关。</p>
+  <p>网络不稳定，超时重试是双刃剑——重试前必须确认服务端接口<mark>幂等</mark>。SpringCloud 用 <mark>Feign</mark> 声明式调用，SpringBoot 可能直接用 <mark>Apache HttpClient</mark>。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>坑点</th><th>默认/现象</th><th>修复</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><mark>读取超时太短</mark></td>
+        <td>默认 <code>ReadTimeout=1s</code></td>
+        <td>按接口耗时调大</td>
+      </tr>
+      <tr>
+        <td><mark>超时配置不生效</mark></td>
+        <td>只配 readTimeout 不配 connectTimeout</td>
+        <td>必须同时配连接超时和读取超时</td>
+      </tr>
+      <tr>
+        <td><mark>Feign 与 Ribbon 冲突</mark></td>
+        <td>同时配置时以 Feign 为准</td>
+        <td>统一在 Feign 侧配置</td>
+      </tr>
+      <tr>
+        <td><mark>重试导致重复请求</mark></td>
+        <td>Ribbon 默认自动重试</td>
+        <td><code>MaxAutoRetriesNextServer=0</code> 禁止重试</td>
+      </tr>
+      <tr>
+        <td><mark>并发连接数瓶颈</mark></td>
+        <td>HttpClient/浏览器默认限制最大并发连接</td>
+        <td>高并发客户端调大连接池</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：Feign 的超时和 Ribbon 的超时是两套配置，同时存在时以 Feign 为准；但 Ribbon 的重试是独立机制，禁重试要单独设 MaxAutoRetriesNextServer=0。超时归 Feign，重试归 Ribbon，别混。</span></p>
+
+  <h2>四、事务生效：@Transactional 失效四场景</h2>
+  <p class="tldr">public + 外部代理调用 + 抛 RuntimeException 才完整。</p>
+  <p>Spring 默认通过<mark>动态代理</mark>实现 AOP 事务增强，绕过代理就失效。必须通过代理过的类从外部调用目标方法才能生效。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>场景</th><th>原因</th><th>修复</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><mark>非 public 方法</mark></td>
+        <td>JDK 动态代理只能代理 public 方法，private 无法代理</td>
+        <td>事务方法必须 <code>public</code></td>
+      </tr>
+      <tr>
+        <td><mark>this 内部调用</mark></td>
+        <td>this 是目标对象本身，不是代理对象，绕过 AOP</td>
+        <td>通过注入的代理 Bean 调用，或 <code>AopContext.currentProxy()</code></td>
+      </tr>
+      <tr>
+        <td><mark>CGLIB 代理 private</mark></td>
+        <td>CGLIB 通过继承生成子类，private 方法子类不可见</td>
+        <td>方法改 public</td>
+      </tr>
+      <tr>
+        <td><mark>异常被吞/非 RuntimeException</mark></td>
+        <td>默认只对 RuntimeException/Error 回滚</td>
+        <td><code>@Transactional(rollbackFor=Exception.class)</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充："事务生效"和"事务回滚"是两件事——生效看是否经过代理（public + 外部调用），回滚看抛的异常类型（默认只回滚 RuntimeException）。方法代理到了但抛了 checked 异常，事务生效却不回滚，照样提交。</span></p>
+
+  <h2>高频场景题</h2>
+  <p class="tldr">串号查 ThreadLocal，超时查 Feign，内层事务查 this。</p>
+  <blockquote>
+    <p><strong>"接口偶发串号，用户 A 看到用户 B 的数据，怎么查？"</strong><br>
+    先确认是否用了 ThreadLocal 存用户信息且请求结束未 remove——Tomcat 线程池复用线程，上一个请求的用户信息残留。修复：在拦截器 afterCompletion 或 try-finally 中显式 threadLocal.remove()；压测高并发短请求可复现。</p>
+  </blockquote>
+  <blockquote>
+    <p><strong>"Feign 调用偶发超时，但服务端日志显示处理很快，怎么查？"</strong><br>
+    大概率是 Feign 默认 ReadTimeout=1s 太短，或只配了 readTimeout 没配 connectTimeout 导致配置不生效。先看 Feign 配置是否同时配了连接和读取超时，再看是否与 Ribbon 冲突（以 Feign 为准），最后看客户端连接池是否打满。</p>
+  </blockquote>
+  <blockquote>
+    <p><strong>"@Transactional 方法里调另一个 @Transactional 方法，内层事务没生效？"</strong><br>
+    典型 this 调用失效——内层方法通过 this.xxx() 调用，this 是目标对象不是代理对象，绕过了 AOP。修复：注入自身 Bean（@Autowired private XxxService self; 后 self.xxx()），或用 AopContext.currentProxy() 拿代理对象调用。</p>
+  </blockquote>
+
+  <h2>面试回答模板</h2>
+  <p class="tldr">本质 → 机制 → 实战修复，三句话讲清。</p>
+  <blockquote>
+    <p><strong>问题本质是……</strong>（先说坑属于哪一类：线程安全、加锁、HTTP、还是事务）。<br>
+    <strong>机制是……</strong>（解释根因 + 关键配置/参数），因为……（为什么这样设计/默认值）。<br>
+    <strong>实战中我会……</strong>（修复手段 + 验证方式），例如……（具体场景）。</p>
+  </blockquote>
+
+  <h2>最后复习：闭眼回忆 8 句</h2>
+  <p class="tldr">根因、ThreadLocal、CHM、锁、公平锁、Feign、连接池、事务。</p>
+  <ol>
+    <li><strong>根因</strong>：Web 服务器用线程池复用线程，没显式 new Thread 也会有线程安全问题。</li>
+    <li><strong>ThreadLocal</strong>：用完必 remove()，放 try-finally 或拦截器 afterCompletion，否则线程复用串号。</li>
+    <li><strong>ConcurrentHashMap</strong>：单 key 原子，putAll/复合操作非原子；批量要逐 key compute 或显式加锁。</li>
+    <li><strong>锁粒度</strong>：只锁必要代码块；区分类级别（锁 Class）和实例级别（锁 this）；读写差异大用 ReentrantReadWriteLock。</li>
+    <li><strong>公平锁</strong>：ReentrantLock/ReentrantReadWriteLock 都有公平版本，竞争强时性能下降上百倍，勿轻易开。</li>
+    <li><strong>Feign</strong>：默认读取超时 1 秒；配超时必须连接+读取一起配；与 Ribbon 同时配以 Feign 为准；MaxAutoRetriesNextServer=0 禁重试。</li>
+    <li><strong>HTTP 客户端</strong>：HttpClient/浏览器都限制最大并发连接数，高并发客户端要调大连接池，否则吞吐瓶颈。</li>
+    <li><strong>@Transactional</strong>：public + 外部代理调用 + 抛 RuntimeException 才完整；非 public、this 调用、checked 异常都失效或不回滚，用 rollbackFor=Exception.class 兜底。</li>
+  </ol>
+
+  <script type="text/template" id="mindmap-biz-pitfalls">
+# 业务开发常见错误
+## 线程安全
+### Tomcat线程池复用线程
+### ThreadLocal用完未remove
+### ConcurrentHashMap批量非原子
+### 单key原子复合操作非原子
+### 逐key compute或显式加锁
+## 加锁问题
+### 锁粒度只锁必要代码块
+### 锁级别类锁还是实例锁
+### 读写场景用读写锁
+### 悲观锁乐观锁按冲突选
+### 公平锁竞争强降百倍
+## HTTP调用
+### Feign默认读取超时1秒
+### 连接超时读取超时一起配
+### Feign与Ribbon以Feign为准
+### Ribbon重试按需关闭
+### HttpClient并发连接数瓶颈
+## 事务生效
+### Spring动态代理实现AOP
+### 非public方法无法代理
+### this调用绕过代理失效
+### CGLIB继承private不可见
+### 默认只回滚RuntimeException
+### rollbackFor指定回滚异常
+## 修复口诀
+### ThreadLocal必remove
+### 批量操作要原子
+### 锁粒度小级别对
+### Feign超时连读一起配
+### 事务public外调抛运行时异常
+  </script>
+</section>

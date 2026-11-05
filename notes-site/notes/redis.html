@@ -1,0 +1,139 @@
+<section class="note" data-note-id="redis" data-note-title="Redis：分布式锁、持久化与缓存三大问题">
+  <p class="tldr">锁·持久化·缓存三连·过期·高可用五条线</p>
+
+  <h2>一、Jedis vs Redisson：怎么选客户端</h2>
+  <p class="tldr">轻量命令用 Jedis，分布式协调用 Redisson</p>
+  <p>Redis 客户端两大选择：<mark>Jedis</mark> 是轻量 Redis 客户端，<mark>Redisson</mark> 是分布式 Java 数据结构框架。选型看业务复杂度与可靠性要求。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>Jedis</th><th>Redisson</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>定位</td><td>轻量 Redis 客户端</td><td>分布式 Java 数据结构框架</td></tr>
+      <tr><td>适用场景</td><td>只需 <code>SET/GET</code> 等基本命令、对延迟敏感</td><td>需分布式锁协调多节点、把 Redis 当 Java Map/List/Queue 用</td></tr>
+      <tr><td>连接管理</td><td>连接池管理，需自己保证线程安全</td><td>内置连接池，API 天然线程安全</td></tr>
+      <tr><td>分布式锁</td><td>手写 <code>setNx</code> 脚本</td><td><mark>RLock</mark> 开箱即用，带看门狗/可重入</td></tr>
+      <tr><td>命令脚本</td><td>手动维护 Lua 脚本</td><td>封装常用数据结构，免写脚本</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：低并发非核心业务、锁操作极短可用 Jedis <code>setNx</code>；高并发核心业务（订单/扣库存）生产级可靠性用 Redisson。</span></p>
+
+  <h2>二、setNx 四大问题与 Redisson 解法</h2>
+  <p class="tldr">看门狗续期·计数器重入·等待超时·集群策略</p>
+  <p>裸 <code>setNx</code> 有四个坑，<mark>Redisson</mark> 用看门狗 + 计数器 + 等待超时 + 集群策略逐一填平。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>问题</th><th>现象</th><th>Redisson 解法</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>① 锁过期并发</td><td>线程超过锁过期时间还在跑，锁已释放，另一线程拿到锁</td><td><mark>看门狗</mark>自动续期</td></tr>
+      <tr><td>② 无法自动续期</td><td>任务执行中锁到期不能延续</td><td>看门狗定时任务周期续期</td></tr>
+      <tr><td>③ 不可重入</td><td>同线程在方法 A 拿锁调用方法 B 再拿同一把锁，被自己阻塞死锁</td><td>内部<mark>计数器</mark>，同线程可多次加锁</td></tr>
+      <tr><td>④ 主从切换丢锁</td><td>主节点宕机，从节点升级时锁数据可能丢失，两客户端同时持锁</td><td>集群模式多种策略应对主从切换</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：看门狗不是无限续期——它依赖业务线程存活，若业务线程卡死，看门狗会一直续期导致锁永不释放，仍要给业务设超时兜底。</span></p>
+
+  <h2>三、RDB vs AOF：两种持久化怎么取舍</h2>
+  <p class="tldr">RDB 拍照丢一截，AOF 录像更安全</p>
+  <p>Redis 持久化两套方案：<mark>RDB</mark> 全量内存快照，<mark>AOF</mark> 追加写命令日志。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>RDB</th><th>AOF</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>原理</td><td>整个拷贝内存快照</td><td>把写操作命令持续写到日志文件</td></tr>
+      <tr><td>数据安全</td><td>可能损失一部分数据</td><td>几乎不丢（按刷盘策略）</td></tr>
+      <tr><td>文件体积</td><td>小（压缩二进制）</td><td>大（命令文本）</td></tr>
+      <tr><td>恢复速度</td><td>快（直接载入）</td><td>慢（重放命令）</td></tr>
+      <tr><td>适用场景</td><td>容忍少量丢失、追求恢复速度</td><td>数据安全要求高</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：Redis 的 RDB/AOF ≠ MySQL 的 redo/undo log。redo log 记变更后的新数据实现持久性，undo log 记变更前的旧数据实现原子性和 MVCC，二者属于 InnoDB 事务日志；RDB/AOF 是 Redis 为重启恢复做的持久化，不是事务日志。</span></p>
+
+  <h2>四、缓存三大问题：穿透、击穿、雪崩</h2>
+  <p class="tldr">穿透查假·击穿热点失效·雪崩集体失效</p>
+  <p>缓存失效三连，区分关键看"数据存不存在"和"失效范围"。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>问题</th><th>触发原因</th><th>解决方案</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>缓存穿透</mark></td><td>黑客故意请求缓存中不存在的数据，所有请求打到数据库</td><td>接口层校验 / <mark>布隆过滤器</mark> / 维护合法 Key</td></tr>
+      <tr><td><mark>缓存击穿</mark></td><td>热点 Key 被高并发访问突然失效，瞬间冲击数据库</td><td>互斥锁 / 热点数据不过期 / 本地缓存</td></tr>
+      <tr><td><mark>缓存雪崩</mark></td><td>缓存统一时间大面积失效，数据库瞬时压力陡增</td><td>给失效时间加随机值避免集体失效</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：穿透是数据根本不存在（缓存和库都没有），击穿是数据存在但缓存刚好失效（库里有），雪崩是大面积 Key 集体失效。三者解法不同，别混答。</span></p>
+
+  <h2>五、过期键删除策略：惰性 vs 定期</h2>
+  <p class="tldr">惰性省 CPU，定期省内存，Redis 组合用</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>策略</th><th>时机</th><th>优点</th><th>缺点</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>惰性过期</mark></td><td>访问 Key 时才判断是否过期</td><td>节省 CPU</td><td>对内存不友好，可能大量过期 Key 占用内存</td></tr>
+      <tr><td><mark>定期过期</mark></td><td>每隔一段时间扫描一定数量 Key 清除已过期的</td><td>折中，主动回收内存</td><td>有扫描开销</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：Redis 实际是惰性 + 定期组合使用，单用惰性会导致不被访问的过期 Key 一直占内存。</span></p>
+
+  <h2>六、主从复制与哨兵：高可用两件套</h2>
+  <p class="tldr">主从 sync 抄 rdb，哨兵监控自动换岗</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>机制</th><th>解决问题</th><th>工作流程</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>主从复制</mark></td><td>数据备份 + 读写分离</td><td>slave 向 master 发 <code>sync</code> → master 后台子进程把数据快照保存到数据文件发给 slave → slave 接收 <code>.rdb</code> 保存到本地载入内存完成同步</td></tr>
+      <tr><td><mark>哨兵 Sentinel</mark></td><td>主节点宕机自动故障转移</td><td>不断监控主从节点运行状态，主不能工作时将一个从升级为新主；通过配置文件发现主服务器，再通过 <code>info</code> 发现从服务器</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：主从复制只是数据同步，主挂了不会自动切换；哨兵才是自动故障转移的指挥官。没有哨兵的主从，主挂了要人工介入。</span></p>
+
+  <h2>面试回答模板</h2>
+  <blockquote>
+    <p>问题本质是：Redis 分布式锁的可靠性，核心矛盾是"锁过期但任务没跑完"和"主从切换丢锁"。</p>
+    <p>机制是：Redisson 用看门狗定时续期解决锁过期，用内部计数器实现可重入，用集群多策略应对主从切换；裸 <code>setNx</code> 这四点都得自己写脚本，生产级难保证。</p>
+    <p>实战中我会：核心业务（订单/扣库存）直接上 Redisson <code>RLock</code>，配合业务超时兜底；非核心轻量场景才用 Jedis <code>setNx</code>，并自己加 Lua 脚本保证原子性。</p>
+  </blockquote>
+
+  <h2>最后复习：闭眼回忆 8 句</h2>
+  <ol>
+    <li>Jedis 轻量基本命令，Redisson 分布式协调，核心业务上 Redisson。</li>
+    <li><code>setNx</code> 四大坑：锁过期并发、无法续期、不可重入、主从切换丢锁。</li>
+    <li>Redisson 解法：看门狗续期、计数器可重入、等待超时、集群多策略。</li>
+    <li>RDB 全量快照可能丢数据恢复快，AOF 追加命令日志更安全恢复慢。</li>
+    <li>Redis 的 RDB/AOF 不是事务日志，和 InnoDB 的 redo/undo 不是一回事。</li>
+    <li>穿透查假用布隆过滤器，击穿热点加锁或不过期，雪崩集体加随机过期值。</li>
+    <li>过期策略惰性 + 定期组合用，单用惰性会内存堆积。</li>
+    <li>主从复制 <code>sync</code> 抄 <code>.rdb</code>，哨兵监控自动故障转移，发现从服务器靠 <code>info</code>。</li>
+  </ol>
+
+  <script type="text/template" id="mindmap-redis">
+# Redis：分布式锁、持久化与缓存三大问题
+## 分布式锁
+### Jedis 轻量基本命令
+### Redisson 分布式协调
+### setNx 四大坑
+### 看门狗续期
+### 计数器可重入
+## 持久化
+### RDB 全量快照
+### AOF 追加命令日志
+### 非 redo/undo 事务日志
+## 缓存三大问题
+### 穿透 查假 布隆过滤器
+### 击穿 热点失效 互斥锁
+### 雪崩 集体失效 随机过期值
+## 过期策略
+### 惰性过期 省 CPU
+### 定期过期 省 内存
+### 组合使用
+## 高可用
+### 主从复制 sync 抄 rdb
+### 哨兵监控自动故障转移
+### info 发现从服务器
+  </script>
+</section>

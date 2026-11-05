@@ -1,0 +1,164 @@
+<section class="note" data-note-id="concurrent" data-note-title="并发编程与异步工具">
+
+  <p class="tldr">5 大并发集合 + ForkJoinPool 工作窃取 + CompletableFuture 全能工具箱。</p>
+
+  <h2>一、ConcurrentHashMap · 高频读写万能主力</h2>
+  <p class="tldr">绝大多数并发 Map 场景的首选。</p>
+  <p>最核心的并发 Map，适合绝大多数需要多线程访问的 Map 场景。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>适用场景</td><td>全局缓存（用户 Session、配置信息、字典数据，多线程频繁 get/put）；计数器/累加器（配合 <mark>compute()、merge()</mark> 做原子更新）；任何 HashMap 的并发替代品</td></tr>
+      <tr><td>不适用</td><td>需要对整个 Map 做原子快照或批量操作（如 putAll）且要求一致性时，需手动加锁</td></tr>
+    </tbody>
+  </table>
+
+  <h2>二、CopyOnWriteArrayList · 读多写少迭代优先</h2>
+  <p class="tldr">写时复制，迭代器永不抛 ConcurrentModificationException。</p>
+  <p><mark>"写时复制"</mark>——每次修改都会复制一份新数组，因此迭代器永不抛出 <code>ConcurrentModificationException</code>。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>适用场景</td><td>监听器/回调列表（Spring 的 ApplicationListener 列表，注册后基本不变但频繁遍历）；配置白名单/黑名单（很少修改但每次请求都要遍历检查）；任何"读>>写"的场景（每秒写几次，读几万次）</td></tr>
+      <tr><td>不适用</td><td>写操作频繁的场景（每次写都复制数组，成本高，会引发频繁 GC）</td></tr>
+    </tbody>
+  </table>
+
+  <h2>三、ConcurrentLinkedQueue · 高吞吐无阻塞传递</h2>
+  <p class="tldr">CAS 无界队列，高吞吐但不阻塞。</p>
+  <p>基于链表实现的<mark>无界非阻塞队列</mark>，使用 CAS 实现线程安全。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>适用场景</td><td>任务队列（多个生产者提交任务，多个消费者轮询取任务）；事件流处理（日志收集、埋点数据临时缓冲，要求高吞吐且不阻塞生产者）；不需要队列大小限制的场景</td></tr>
+      <tr><td>不适用</td><td>需要阻塞等待（如队列为空时消费者挂起）的场景——这时应选 BlockingQueue；它是<mark>无界的</mark>，如果生产者快于消费者，内存会爆</td></tr>
+    </tbody>
+  </table>
+
+  <h2>四、BlockingQueue · 生产者-消费者流速控制</h2>
+  <p class="tldr">队空消费阻塞，队满生产阻塞，线程池核心组件。</p>
+  <p><mark>阻塞队列</mark>，当队列为空时消费线程阻塞，当队列满时生产线程阻塞。是线程池（ThreadPoolExecutor）的核心组件。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>实现</th><th>特点</th><th>场景</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>ArrayBlockingQueue</mark>（有界）</td><td>固定大小</td><td>配合线程池做流量控制，防止任务堆积过多</td></tr>
+      <tr><td><mark>LinkedBlockingQueue</mark>（可选有界）</td><td>Executors.newFixedThreadPool 默认使用，容量为 Integer.MAX_VALUE</td><td>注意内存风险</td></tr>
+      <tr><td><mark>SynchronousQueue</mark>（容量 0）</td><td>每个任务必须等消费者接手，否则生产者阻塞</td><td>用于 Executors.newCachedThreadPool，传递性场景（不做缓冲，直接转手）</td></tr>
+      <tr><td><mark>DelayQueue</mark></td><td>延迟任务调度</td><td>订单超时关闭</td></tr>
+    </tbody>
+  </table>
+
+  <h2>五、ConcurrentSkipListMap · 并发有序 Map</h2>
+  <p class="tldr">跳表实现，并发安全 + 有序，O(log n)。</p>
+  <p>基于<mark>跳表（Skip List）</mark>实现，线程安全且支持排序（按 Comparable 或 Comparator 自然顺序）。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>适用场景</td><td>有序数据缓存（排行榜按分数排序、时间窗口数据按时间戳排序）；范围查询（<code>subMap</code> 取区间数据）；替代 ConcurrentHashMap + TreeMap 组合（既需要并发安全又需要有序性）</td></tr>
+      <tr><td>不适用</td><td>如果不需要排序，ConcurrentHashMap 性能更好（跳表查找 O(log n)，HashMap 为 O(1)）</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：ConcurrentLinkedQueue 和 BlockingQueue 都是队列，但前者无阻塞（CAS，高吞吐但无界可能爆内存），后者会阻塞（队空消费阻塞、队满生产阻塞，适合流速控制）。选型看是否需要"阻塞等待"。</span></p>
+
+  <h2>六、ForkJoinPool · CPU 密集型并行利器</h2>
+  <p class="tldr">工作窃取让核心满载，但不适合 I/O 阻塞。</p>
+  <p>ForkJoinPool 是专为"可拆分的计算任务"设计的 <mark>CPU 密集型并行利器</mark>，通过"工作窃取"让所有核心满载运行，但它不是万能药，遇到 I/O 阻塞会适得其反。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>核心机制</td><td><mark>工作窃取（Work Stealing）</mark>：每个线程有自己的双端队列，自己的任务从一端取，空闲时从其他线程队列的另一端"窃取"任务</td></tr>
+      <tr><td>适用场景</td><td>批量计算、大集合排序、递归树遍历等 CPU 密集型可拆分任务</td></tr>
+      <tr><td>不适用</td><td>I/O 密集型——线程在等待 I/O 阻塞时，工作窃取无法生效，所有线程都阻塞时 CPU 闲置，甚至可能死锁</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：ForkJoinPool 的工作窃取是"自己队列从一端取，窃取别人从另一端取"，避免竞争同一端。这是它比普通线程池更适合可拆分任务的原因——空闲线程主动找活干，不让 CPU 闲着。</span></p>
+
+  <h2>七、FutureTask · 异步任务基础载体</h2>
+  <p class="tldr">只能阻塞 get 或轮询 isDone，三大致命短板。</p>
+  <p>它是 RunnableFuture 接口的实现，本质上是一个"可取消的异步计算任务"。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>核心用法</td><td>通常配合 <code>ExecutorService.submit()</code> 使用，返回一个 Future 句柄</td></tr>
+      <tr><td>获取结果</td><td>必须调用阻塞的 <code>get()</code> 方法（会一直等着），或者轮询 <code>isDone()</code>（浪费 CPU）</td></tr>
+      <tr><td><mark>致命短板</mark></td><td>① 无法手动完成：不能主动告诉它"任务完成了，这是结果"；② 无法链式调用：任务 A 完成后想自动执行任务 B，必须手动在 get() 后写代码且会阻塞主线程；③ 无法组合：无法将两个异步任务的结果合并</td></tr>
+    </tbody>
+  </table>
+
+  <h2>八、CompletableFuture · 异步编程全能工具箱</h2>
+  <p class="tldr">回调驱动 + 链式编排 + 多任务组合 + 异常处理。</p>
+  <p>它实现了 CompletionStage 接口，是 Java 8 引入的函数式异步编程利器。核心优势：<mark>非阻塞 + 回调驱动</mark>。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>能力</th><th>方法</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>手动完成</mark></td><td><code>complete(T value)</code></td><td>可以在任意时刻主动给任务赋值</td></tr>
+      <tr><td><mark>链式编排</mark></td><td><code>thenApply()</code>、<code>thenAccept()</code>、<code>thenRun()</code></td><td>将多个异步任务串联成流水线</td></tr>
+      <tr><td><mark>多任务组合</mark></td><td><code>allOf()</code>（等待全部完成）、<code>anyOf()</code>（等待任一完成）、<code>thenCombine()</code>（合并两个任务结果）</td><td>灵活编排多个异步任务</td></tr>
+      <tr><td><mark>异常处理</mark></td><td><code>exceptionally()</code>、<code>handle()</code></td><td>直接捕获链中抛出的异常，非常优雅</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：FutureTask 和 CompletableFuture 都是异步任务，但 FutureTask 是"基础载体"（只能阻塞 get 或轮询 isDone），CompletableFuture 是"全能工具箱"（回调驱动、链式编排、多任务组合、异常处理）。新代码用 CompletableFuture，别再用 FutureTask 的阻塞 get。</span></p>
+
+  <h2>九、面试串联话术</h2>
+  <p class="tldr">集合选型→ForkJoinPool→CompletableFuture一气呵成。</p>
+  <blockquote>
+    <p>并发集合五大主力：ConcurrentHashMap 是万能主力（高频读写全局共享），CopyOnWriteArrayList 专治读多写少（写时复制，迭代器不抛异常），ConcurrentLinkedQueue 负责高吞吐传递（CAS 无阻塞但无界），BlockingQueue 用于流速控制（队空消费阻塞、队满生产阻塞，线程池核心），ConcurrentSkipListMap 承包并发有序（跳表 O(log n)）。</p>
+    <p>ForkJoinPool 是 CPU 密集型并行利器，靠工作窃取让所有核心满载——自己队列从一端取，窃取别人从另一端取。但不适合 I/O 密集型，线程阻塞时工作窃取无法生效。</p>
+    <p>异步编程用 CompletableFuture 而不是 FutureTask。FutureTask 只能阻塞 get 或轮询 isDone，有无法手动完成、无法链式调用、无法组合三大短板。CompletableFuture 是回调驱动 + 链式编排（thenApply/thenAccept/thenRun）+ 多任务组合（allOf/anyOf/thenCombine）+ 异常处理（exceptionally/handle），新代码都用它。</p>
+  </blockquote>
+
+  <script type="text/template" id="mindmap-concurrent">
+# 并发编程
+## 5大并发集合
+### ConcurrentHashMap万能主力
+### CopyOnWriteArrayList读多写少
+### ConcurrentLinkedQueue高吞吐无阻塞
+### BlockingQueue流速控制
+### ConcurrentSkipListMap并发有序
+## ConcurrentHashMap
+### 高频读写全局共享
+### compute merge原子更新
+## CopyOnWriteArrayList
+### 写时复制
+### 迭代器不抛异常
+### 写频繁别用
+## ConcurrentLinkedQueue
+### CAS无界队列
+### 高吞吐不阻塞
+### 无界可能爆内存
+## BlockingQueue
+### ArrayBlockingQueue有界
+### LinkedBlockingQueue注意MAX_VALUE
+### SynchronousQueue容量0
+### DelayQueue延迟任务
+## ConcurrentSkipListMap
+### 跳表实现
+### 并发安全+有序
+### O(log n)
+## ForkJoinPool
+### 工作窃取机制
+### CPU密集型可拆分
+### I/O阻塞会适得其反
+## CompletableFuture
+### 回调驱动非阻塞
+### 链式编排thenApply
+### 多任务组合allOf anyOf
+### 异常处理exceptionally
+  </script>
+</section>

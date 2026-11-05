@@ -1,0 +1,10 @@
+[
+  {
+    "id": "2026-11-05-llm-model",
+    "date": "2026-11-05",
+    "title": "LLM 模型核心体系",
+    "summary": "训练三阶段 → Transformer 组件 → 推理优化 → 对齐与可控生成 → 应用层扩展，覆盖大模型面试高频题。",
+    "tags": ["LLM", "Transformer", "Attention", "KV Cache", "RLHF", "DPO", "MoE", "量化"],
+    "file": "notes/daily/2026-11-05-llm-model.md"
+  }
+]

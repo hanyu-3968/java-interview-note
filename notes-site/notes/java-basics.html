@@ -1,0 +1,102 @@
+<section class="note" data-note-id="java-basics" data-note-title="Java基础核心知识点">
+
+  <p class="tldr">equals/hashCode 协同 + 反射三阶段 + 泛型擦除 + JDK 动态代理。</p>
+
+  <h2>一、equals 方法为什么必须重写 hashCode</h2>
+  <p class="tldr">equals 比值，hashCode 定散列位置，二者必须协同。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>equals 默认行为</td><td>Object 的 equals 默认用 <code>==</code> 比较对象<mark>地址</mark>，想比较值必须重写</td></tr>
+      <tr><td>hashCode 作用</td><td>主要用于提升查询效率，确定对象在散列结构（HashMap/HashSet）中的<mark>存储位置</mark></td></tr>
+      <tr><td>协同规则</td><td>重写 equals 必须重写 hashCode，二者参与计算的属性字段应该相同</td></tr>
+      <tr><td>散列校验标准</td><td>hash 结构添加元素时<mark>先比 hashCode，后判断 equals</mark></td></tr>
+      <tr><td>等价关系</td><td>equals 相等 → hashCode 一定相等；hashCode 相同 ≠ 对象相同（只是散列到同一桶）</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充："hashCode 相同代表对象相同"是错的。hashCode 相同只说明两个对象在散列结构中落在同一个数组桶里（哈希冲突），是否真的相等还要靠 equals 判断。反过来，equals 相等则 hashCode 必须相等——否则两个"相等"的对象散列到不同桶，HashMap 里就会存两份。</span></p>
+
+  <h2>二、反射机制</h2>
+  <p class="tldr">运行时动态获取类信息并调用方法，三阶段流转。</p>
+  <p>反射将类的各个部分封装成对象，对于任意一个类都能知道其所有属性和方法，对于任意一个对象都能调用其任意方法和属性。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>阶段</th><th>发生什么</th><th>关键产物</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>源代码阶段</td><td>java 文件编译生成字节码文件</td><td>Student.class（在硬盘）</td></tr>
+      <tr><td>类对象阶段</td><td>类加载器把 class 的成员变量/构造方法/成员方法加载到内存</td><td><mark>Class 对象</mark></td></tr>
+      <tr><td>运行时阶段</td><td>创建对象、调用方法</td><td>实例对象</td></tr>
+    </tbody>
+  </table>
+  <p><mark>反射的典型使用</mark>：Dubbo 泛化调用——把接口全路径、方法名、参数类型配置在数据库表，通过 <code>GenericService.$invoke</code> 动态执行，底层就是 <code>Class.forName()</code> 加载类 + <code>Method.invoke()</code> 执行方法。新增下游接口只需在配置表插一条记录，无需改代码重新发布。</p>
+  <p><span class="supplement">补充：反射的"类对象阶段"是把类的结构信息（字段、方法、构造器）加载成 Class 对象，不是创建实例。实例是在"运行时阶段"通过 Class 对象创建的。Class 对象每个类只有一个，实例可以有多个。</span></p>
+
+  <h2>三、泛型</h2>
+  <p class="tldr">编译时类型检查，编译后擦除为 Object。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>核心作用</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>编译时类型安全</td><td>编译期就能发现类型错误，避免运行时 ClassCastException</td></tr>
+      <tr><td>消除强制类型转换</td><td>使用时无需手动转型，代码更简洁</td></tr>
+      <tr><td>代码复用</td><td>一套代码适用于多种数据类型</td></tr>
+      <tr><td><mark>泛型擦除</mark></td><td>编译时做类型检查，编译后把泛型参数擦除替换成 Object，编译器自动插入强转代码</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：泛型是编译期机制，运行时不存在。编译后泛型参数被擦除（替换成 Object 或上界），所以 List&lt;String&gt; 和 List&lt;Integer&gt; 在运行时是同一个 Class（List）。这也是为什么不能用 instanceof List&lt;String&gt; 的原因——运行时拿不到泛型参数。</span></p>
+
+  <h2>四、JDK 动态代理</h2>
+  <p class="tldr">运行时动态生成代理类，单继承所以必须接口。</p>
+  <p>原理：运行时在内存中动态构建一个代理类（实现接口），编译执行，JVM 停止代理类就消失。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>步骤</th><th>做什么</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1. 实现接口</td><td>代理类实现被代理的业务接口</td></tr>
+      <tr><td>2. 静态块反射方法</td><td>通过静态块反射业务接口的方法，得到 Method 对象</td></tr>
+      <tr><td>3. 调用父类构造器</td><td>调用父类 Proxy 构造器，传入 InvocationHandler 参数</td></tr>
+      <tr><td>4. 重写接口方法</td><td>重写接口方法时调用父类 Proxy 的 <code>h.invoke</code> 方法</td></tr>
+    </tbody>
+  </table>
+  <p><mark>为什么动态代理必须有接口？</mark>通过父类 Proxy 的构造方法保存了创建代理对象时传入的 InvocationHandler 实例。因为 Java 是<mark>单继承</mark>的，代理类 <code>$Proxy0</code> 继承了 Proxy 后，只能通过<mark>实现接口</mark>的方式来扩展方法。没有接口就没有方法可以代理重写。</p>
+  <p><span class="supplement">补充：JDK 动态代理只能代理接口（因为单继承已占用 extends Proxy），这是它和 CGLIB 的核心区别——CGLIB 通过继承目标类生成子类代理，所以能代理普通类但不能代理 final 类/方法。Spring AOP 默认：有接口用 JDK 动态代理，无接口用 CGLIB。</span></p>
+
+  <h2>五、面试串联话术</h2>
+  <p class="tldr">对象相等→反射→泛型→代理一气呵成。</p>
+  <blockquote>
+    <p>equals 默认用 == 比地址，比值要重写；hashCode 定散列位置，重写 equals 必重写 hashCode（用相同字段），否则相等对象散列到不同桶，HashMap 存两份。hashCode 相同只是哈希冲突落同桶，是否相等靠 equals。</p>
+    <p>反射三阶段：源代码（.class）→ 类对象（Class 承载结构）→ 运行时（创建实例调用方法）。Dubbo 泛化调用就是反射的典型应用，配置化动态执行接口。</p>
+    <p>泛型编译时类型检查，编译后擦除为 Object，运行时无泛型（List&lt;String&gt; 和 List&lt;Integer&gt; 运行时同 Class）。</p>
+    <p>JDK 动态代理运行时生成代理类，单继承已占 extends Proxy，只能 implements 接口扩展方法，所以必须接口；代理普通类用 CGLIB（继承生成子类）。</p>
+  </blockquote>
+
+  <script type="text/template" id="mindmap-java-basics">
+# Java基础
+## equals/hashCode
+### equals默认比地址
+### hashCode定散列位置
+### 重写equals必重写hashCode
+### hashCode相同不等于对象相同
+## 反射机制
+### 源代码阶段编译成class
+### 类对象阶段加载到内存
+### 运行时阶段创建对象
+### Dubbo泛化调用典型应用
+## 泛型
+### 编译时类型安全检查
+### 消除强制类型转换
+### 编译后擦除为Object
+### 运行时无泛型
+## JDK动态代理
+### 运行时动态生成代理类
+### 实现接口静态块反射方法
+### 父类构造器传InvocationHandler
+### 单继承所以必须接口
+### CGLIB继承生成子类代理普通类
+  </script>
+</section>

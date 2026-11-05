@@ -1,0 +1,152 @@
+<section class="note" data-note-id="collections" data-note-title="Java集合核心知识点">
+
+  <p class="tldr">HashMap 原理 + ArrayList/LinkedList 对比 + HashSet + ConcurrentHashMap 演进。</p>
+
+  <h2>一、HashMap 和 Hashtable 的区别</h2>
+  <p class="tldr">HashMap 红黑树+key 可 null+不安全，Hashtable 锁整对象已淘汰。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>HashMap</th><th>Hashtable</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>底层结构</td><td>数组 + 链表 + <mark>红黑树</mark></td><td>数组 + 链表</td></tr>
+      <tr><td>null 键值</td><td><mark>可以存储 null 键值</mark>（key 为空时哈希值为 0）</td><td>无论 key 还是 value 都<mark>不能为 null</mark></td></tr>
+      <tr><td>线程安全</td><td><mark>线程不安全</mark></td><td>线程安全（修改数据时锁住整个 Hashtable，效率低）</td></tr>
+      <tr><td>替代方案</td><td>并发用 ConcurrentHashMap</td><td>已被 ConcurrentHashMap 取代</td></tr>
+    </tbody>
+  </table>
+  <p><mark>为什么 HashMap 的 key 值可以为 null？</mark>HashMap 使用 hash 方法计算 key 的哈希值，当 key 为空时，直接令 key 的哈希值为 0。</p>
+  <p><span class="supplement">补充：Hashtable 线程安全但效率低（锁整个对象），已被 ConcurrentHashMap 取代。并发场景别用 Hashtable，用 ConcurrentHashMap（JDK1.8 用 CAS + synchronized 锁头节点，粒度更细）。</span></p>
+
+  <h2>二、HashMap 的 put 方法</h2>
+  <p class="tldr">算哈希定下标 → 处理冲突 → 检查扩容。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>步骤</th><th>做什么</th><th>关键点</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1. 计算哈希值，确定数组下标</td>
+        <td>用 hash 方法计算 key 哈希值，按位与确定下标</td>
+        <td>之所以用<mark>按位与</mark>，是因为底层数组长度总是 2 的幂，这种运算效率比取模更高</td>
+      </tr>
+      <tr>
+        <td>2. 处理哈希冲突，插入节点</td>
+        <td>拿到下标后检查这个位置有没有元素；没有直接插入；有就发生了<mark>哈希冲突</mark>，遍历链表或红黑树比较 key 是否相同，相同覆盖，没有追加链条或转换红黑树</td>
+        <td>链表长度 ≥ 8 且数组长度 ≥ 64 转红黑树</td>
+      </tr>
+      <tr>
+        <td>3. 检查容量，决定是否扩容</td>
+        <td>扩容阈值 = 容量 × 负载因子</td>
+        <td>默认负载因子 0.75，达到阈值就扩容（容量翻倍）</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：HashMap 的按位与（(n-1) & hash）替代取模（hash % n）的前提是数组长度是 2 的幂。这是 HashMap 构造时容量会向上取整为 2 的幂的原因——为了用按位与提速。</span></p>
+
+  <h2>三、ArrayList 和 LinkedList 区别</h2>
+  <p class="tldr">数组查快增删慢 vs 链表查慢增删快，但看场景。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>ArrayList</th><th>LinkedList</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>数据结构</td><td><mark>数组</mark>实现</td><td><mark>链表</mark>实现</td></tr>
+      <tr><td>查找效率</td><td>查找元素快（数组下标随机访问 O(1)）</td><td>查找元素慢（链表需遍历 O(n)）</td></tr>
+      <tr><td>增删效率</td><td>增删慢（数组要移动元素）</td><td>增删快（链表改指针即可）</td></tr>
+    </tbody>
+  </table>
+  <p><mark>容易踩坑的细节</mark>：</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>场景</th><th>谁更快</th><th>原因</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>尾部插入，数据量较小</td><td>LinkedList 较快</td><td>ArrayList 要频繁扩容</td></tr>
+      <tr><td>尾部插入，数据量较大</td><td><mark>ArrayList 更快</mark></td><td>ArrayList 扩容是当前容量 ×1.5，数据量大时不需频繁扩容；LinkedList 每次 add 都要 new 成 Node 对象，ArrayList 直接数组赋值</td></tr>
+      <tr><td>中间插入</td><td>ArrayList 可能更快</td><td>LinkedList 遍历获取插入位置是<mark>两头往中间搜</mark>，index 越往中间遍历越久</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充："LinkedList 增删快"不是绝对的。尾部插入大数据量时 ArrayList 更快（不频繁扩容 + 直接数组赋值 vs LinkedList 每次 new Node）；中间插入 LinkedList 要遍历到位置（两头往中间搜），ArrayList 虽然要移动元素但数组操作更快。选型看具体场景，别死记"LinkedList 增删快"。</span></p>
+
+  <h2>四、HashSet</h2>
+  <p class="tldr">基于 HashMap，不重复无序，判重靠 equals+hashCode。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>核心特点</td><td><mark>不允许重复元素</mark>，<mark>无序</mark></td></tr>
+      <tr><td>底层实现</td><td>基于 HashMap 实现——元素都存到 HashMap 键值对的 key 上，而 value 有一个统一的 Object 对象（PRESENT）</td></tr>
+      <tr><td>唯一性保证</td><td>重复对象 equals 方法返回 true；重复对象 hashCode 方法返回相同的整数</td></tr>
+      <tr><td>重写要求</td><td>如果需要根据属性判断两个对象相等，除了重写 equals 方法，还要<mark>重写 hashCode 方法</mark></td></tr>
+    </tbody>
+  </table>
+  <p><mark>HashSet 和 ArrayList 的区别</mark>：</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>HashSet</th><th>ArrayList</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>重复性</td><td><mark>不重复</mark></td><td>可重复</td></tr>
+      <tr><td>有序性</td><td><mark>无序</mark></td><td>有序</td></tr>
+      <tr><td>查询效率</td><td>高（基于 HashMap）</td><td>高</td></tr>
+      <tr><td>增删效率</td><td>高</td><td>低</td></tr>
+      <tr><td>线程安全</td><td>不安全</td><td>不安全</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：HashSet 判重靠 equals + hashCode 两个方法。只重写 equals 不重写 hashCode 会导致"逻辑相等但 hashCode 不同"的对象被当成不同对象存进去——所以两个方法必须同时重写。</span></p>
+
+  <h2>五、ConcurrentHashMap 原理</h2>
+  <p class="tldr">1.7 分段锁 Segment，1.8 CAS+synchronized 锁头节点。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>版本</th><th>锁机制</th><th>数据结构</th><th>读操作</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>JDK 1.7</mark></td><td><mark>分段锁 Segment 数组</mark>，每个 Segment 继承 ReentrantLock；存数据时先通过 hash 算出属于哪个 Segment，然后锁住这一小段</td><td>Segment 数组 + HashEntry</td><td>有锁</td></tr>
+      <tr><td><mark>JDK 1.8</mark></td><td><mark>CAS + synchronized 锁头节点</mark></td><td>数组 + 链表 + 红黑树</td><td><mark>无锁</mark>（Node 的 val 和 next 都用 volatile 修饰）</td></tr>
+    </tbody>
+  </table>
+  <p><mark>JDK 1.7 分段锁原理</mark>：把整个 Map 拆成多个 Segment（默认 16 个），每个 Segment 是一个独立的小 HashMap，自带 ReentrantLock。存数据时只锁对应的 Segment，不同 Segment 可以并发，提升吞吐量。</p>
+  <p><mark>JDK 1.8 改进</mark>：抛弃 Segment 分段锁，改为 CAS + synchronized 锁头节点。锁粒度从 Segment（一段）细化到头节点（一个桶），并发度更高；数据结构加红黑树（链表 ≥8 转树）；读操作无锁（volatile 保证可见性）。</p>
+  <p><span class="supplement">补充：JDK 1.8 的 ConcurrentHashMap 用 synchronized 而不是 ReentrantLock，是因为 1.8 锁粒度细化到头节点，synchronized 经过 JVM 优化（偏向锁、轻量级锁）在低竞争场景性能不输 ReentrantLock，且内存占用更小。</span></p>
+
+  <h2>六、面试串联话术</h2>
+  <p class="tldr">Map→List→Set→并发一气呵成。</p>
+  <blockquote>
+    <p>HashMap 底层数组+链表+红黑树，key 可为 null（hash 时为 0），线程不安全；Hashtable 底层数组+链表，key/value 都不能为 null，锁整个对象效率低，已被 ConcurrentHashMap 取代。</p>
+    <p>HashMap put 三步：算哈希定下标（按位与，数组长度 2 的幂提速）→ 处理哈希冲突（链表/红黑树，≥8 转树）→ 检查扩容（阈值=容量×0.75）。</p>
+    <p>ArrayList 数组查快增删慢，LinkedList 链表查慢增删快，但不是绝对——大数据量尾部插入 ArrayList 更快（不频繁扩容+直接数组赋值），中间插入 LinkedList 要两头往中间搜遍历久。</p>
+    <p>HashSet 基于 HashMap（元素存 key，value 统一 PRESENT），不重复无序，判重靠 equals + hashCode 同时重写。ConcurrentHashMap 1.7 分段锁 Segment（锁一段），1.8 改 CAS + synchronized 锁头节点（锁一个桶）+ 红黑树 + 读无锁（volatile）。</p>
+  </blockquote>
+
+  <script type="text/template" id="mindmap-collections">
+# Java集合
+## HashMap vs Hashtable
+### HashMap数组+链表+红黑树
+### HashMap key可为null
+### HashMap线程不安全
+### Hashtable锁整个对象已淘汰
+## HashMap put三步
+### 算哈希定下标按位与
+### 处理哈希冲突链表红黑树
+### 链表≥8转红黑树
+### 检查扩容容量×0.75
+## ArrayList vs LinkedList
+### ArrayList数组查快增删慢
+### LinkedList链表查慢增删快
+### 大数据量尾部ArrayList更快
+### 中间插入LinkedList两头搜
+## HashSet
+### 基于HashMap实现
+### 元素存key value统一PRESENT
+### 不重复无序
+### equals+hashCode同时重写
+## ConcurrentHashMap
+### 1.7分段锁Segment
+### Segment继承ReentrantLock
+### 1.8 CAS+synchronized锁头节点
+### 1.8红黑树+读无锁volatile
+  </script>
+</section>

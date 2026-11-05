@@ -1,0 +1,172 @@
+<section class="note" data-note-id="jvm-tools" data-note-title="JVM工具与微服务全链路排障">
+
+  <p class="tldr">JVM 四大排障工具 + Arthas 在线诊断，覆盖微服务全链路。</p>
+
+  <h2>一、Apollo · 分布式配置中心</h2>
+  <p class="tldr">长连接推送 + 本地缓存兜底，配置实时生效。</p>
+  <p>携程研发的<mark>分布式配置中心</mark>，集中化管理不同环境、不同集群的配置，修改后实时推送到应用端，适用于微服务配置管理场景。</p>
+  <ul>
+    <li><mark>长连接</mark>接收服务端配置变更推送，<mark>定时拉取</mark>作为兜底，确保最终一致。</li>
+    <li>配置<mark>缓存到本地文件系统</mark>，服务端不可用时客户端仍可读取，保证启动与运行。</li>
+    <li>对外提供配置获取 API 与变更订阅机制。</li>
+  </ul>
+
+  <h2>二、jstat · 实时看板</h2>
+  <p class="tldr">实时监控 GC、类加载、JIT 编译状态。</p>
+  <p>JDK 自带轻量级命令行工具，核心作用是实时查看 JVM 内部状态，擅长监控<mark>垃圾回收</mark>与<mark>类加载</mark>。</p>
+  <ul>
+    <li>GC 状态：各内存区域使用率，Young GC / Full GC 次数与耗时。</li>
+    <li>类加载：当前加载、卸载的类数量。</li>
+    <li>JIT 编译：即时编译器编译方法数与耗时。</li>
+  </ul>
+  <p>典型命令：<code>jstat -gcutil 25048 5000 100</code>（每 5 秒一次，共 100 次）。</p>
+  <pre><code>S0     S1     E      O      M     CCS    YGC    YGCT   FGC   FGCT    GCT
+0.00  67.08  32.43  80.15  93.55  87.09  691   4.923  397  10.099  15.022</code></pre>
+  <p>读数关注点：</p>
+  <ol>
+    <li><mark>FGC 频率</mark>过高 → 应用内存分配极快，堆几乎无空闲。</li>
+    <li><mark>O（老年代）</mark>降一点又回升 → 老年代有大量无法回收对象。</li>
+    <li><mark>M（元空间）</mark>逼近临界值 → 可能触发 Metaspace Full GC；建议调大 <code>-XX:MaxMetaspaceSize</code> 或排查动态类加载泄漏。</li>
+  </ol>
+  <p><span class="supplement">补充：jstat 各列含义——S0/S1 两个 Survivor 区占比，E Eden，O 老年代，M 元空间，CCS 压缩类空间，YGC/YGCT Young GC 次数与累计耗时，FGC/FGCT Full GC 次数与累计耗时，GCT GC 总耗时。</span></p>
+
+  <h2>三、jmap · 内存快照</h2>
+  <p class="tldr">导出 Heap Dump，注意会触发 STW。</p>
+  <p>导出内存快照（Heap Dump），<mark>导出时会暂停应用（STW）</mark>。典型命令：<code>jmap -dump:live,format=b,file=heap.hprof &lt;PID&gt;</code>。</p>
+
+  <h2>四、jstack · 线程堆栈</h2>
+  <p class="tldr">查死锁、CPU 飙高、应用卡死三大场景。</p>
+  <p>JDK 自带轻量级工具，打印指定 Java 进程的<mark>线程堆栈（Thread Dump）</mark>，用于排查死锁与高 CPU 占用对应的代码行。</p>
+  <ul>
+    <li><strong>线上 CPU 飙升</strong>：<code>top -Hp &lt;PID&gt;</code> 找到高 CPU 线程 ID（十进制）→ 转十六进制 → 在 jstack 输出中搜索定位代码行。根因多为死循环或密集计算。</li>
+    <li><strong>应用卡死 / 接口超时</strong>：连续执行 3~5 次 jstack，间隔几秒，对比输出。线程反复 <mark>BLOCKED / WAITING</mark> → 锁竞争或死锁。</li>
+    <li><strong>怀疑死锁</strong>：<code>jstack -l &lt;PID&gt;</code> 会自动检测，输出 <code>Found one Java-level deadlock:</code> 并圈出互等线程。</li>
+  </ul>
+  <p><span class="supplement">补充：线程 ID 十进制转十六进制可用 <code>printf "%x\n" &lt;tid&gt;</code>；jstack 输出中线程 nid 字段即十六进制线程 ID。</span></p>
+
+  <h2>五、MAT · 堆内存分析法医</h2>
+  <p class="tldr">三板斧定位内存泄漏到具体代码行。</p>
+  <p>Java 堆内存分析工具，分析 <mark>.hprof</mark> 堆转储，找出内存泄漏。</p>
+  <p>定位三板斧：</p>
+  <ol>
+    <li><mark>Leak Suspects Report</mark> 看整体印象。</li>
+    <li><mark>Histogram / Dominator Tree</mark> 定位"大对象"或"多对象"。</li>
+    <li><mark>Path to GC Roots</mark>（排除弱/软/虚引用）顺引用链找到导致无法释放的代码位置。</li>
+  </ol>
+  <p>Path to GC Roots 展示对象到 GC Roots 的引用链；若本应回收的对象可经此路径到达 GC Roots，说明被<mark>强引用链</mark>持有，无法回收 → 内存泄漏。</p>
+
+  <h2>六、Arthas · 在线救火队长</h2>
+  <p class="tldr">不重启应用，整合 jstat/jstack/jmap 交互式诊断。</p>
+  <p>Java 应用诊断利器，允许在不重启应用的情况下实时探查线上运行中的进程。</p>
+  <p>经典案例：</p>
+  <ol>
+    <li>发现问题：线上 CPU 持续飙高。</li>
+    <li>定位线程：<code>dashboard</code> 发现 <code>pool-7-thread-1</code> CPU 持续 90%+。</li>
+    <li>查看栈：<code>thread &lt;线程ID&gt;</code> 发现卡在 <code>java.util.regex.Pattern</code> 正则匹配。</li>
+    <li>监控方法：<code>watch com.example.aop.LogAspect cutMethod '{params}'</code> 发现 100KB 超长字符串触发<mark>正则回溯爆炸</mark>。</li>
+  </ol>
+  <p>优势：整合 jstack/jmap/jstat 功能，提供 <code>thread -n5</code>、<code>dashboard</code> 等命令，无需记忆命令参数与线程 ID 转换；轻量敏捷，下载 <code>arthas-boot.jar</code> 即可运行。</p>
+
+  <h2>七、Docker 与 K8s · 容器化与编排</h2>
+  <p class="tldr">Docker 打包隔离，K8s 编排运维。</p>
+  <p><mark>Docker</mark> 软件容器平台：镜像（特殊文件系统，含程序/库/资源/配置）→ 容器（镜像运行实例，相互隔离）→ 仓库（集中存储与分发）。主要功能：构建、打包、分发、运行单个容器。</p>
+  <p><mark>K8s</mark> 容器编排平台：自动化部署、弹性伸缩、负载均衡、服务发现、故障自愈；多主机集群。Docker 解决打包与环境隔离，K8s 解决大规模部署与运维。</p>
+
+  <h2>八、流量入口与 Web 容器</h2>
+  <p class="tldr">Nginx 挡入口，Tomcat 跑业务，Netty 做内部 RPC。</p>
+  <ul>
+    <li><mark>Nginx</mark>（C 语言）：反向代理、负载均衡、限流熔断；基于 <mark>NIO 事件驱动</mark>，并发强、内存极低。</li>
+    <li><mark>Apache</mark>（C 语言）：Web 服务器与反向代理，进程/线程驱动，功能丰富但高并发耗资源，多用于老系统。</li>
+    <li><mark>Tomcat</mark>（Java）：标准 Servlet 容器，Spring Boot 默认内嵌。</li>
+    <li><mark>Jetty</mark>（Java）：更轻量灵活，启动极快，适合嵌入式或频繁重启的开发环境。</li>
+    <li><mark>Netty</mark>：高性能 NIO 网络编程工具箱，可自定义 TCP/UDP/HTTP/WebSocket 协议，微服务 RPC 调用基石。</li>
+  </ul>
+  <p>微服务协同链路：用户浏览器 → Nginx（反向代理/限流）→ Tomcat/Jetty（运行 Spring Boot 业务）→ Netty（调用下游 Dubbo RPC）→ 数据库。</p>
+
+  <h2>九、Janus · 统一监控平台</h2>
+  <p class="tldr">SkyWalking 链路 + Prometheus 指标 + ELK 日志。</p>
+  <p>基于 Java + Vue 的企业级系统：集成 <mark>SkyWalking</mark> 做链路追踪，<mark>Prometheus / InfluxDB</mark> 存指标，<mark>ELK Stack</mark>（Elasticsearch + Logstash + Kibana）做日志采集、检索与分析。</p>
+
+  <h2>十、排障思路串联</h2>
+  <p class="tldr">jstat 宏观报警 → jstack 微观现场 → jmap 根本证据。</p>
+  <p>先用 <mark>jstat</mark> 发现 O 区占满、GC 频繁（宏观报警）→ 再用 <mark>jstack</mark> 看是否大量线程 BLOCKED 导致任务堆积（微观现场）→ 最后用 <mark>jmap</mark> 导出 Dump 查内存泄漏（根本证据）。</p>
+
+  <table class="lookup">
+    <caption>JVM 排障场景速查表</caption>
+    <thead>
+      <tr><th>异常现象</th><th>第一反应工具</th><th>核心排查动作</th><th>最终定位依据</th><th>经典根因</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>CPU 持续飙高（100%）</td>
+        <td><code>top -Hp</code> + <code>jstack</code>（或 Arthas <code>thread -n 5</code>）</td>
+        <td>top -Hp 找高 CPU 线程 ID（十进制）→ 转十六进制 → jstack 日志中搜索</td>
+        <td>找到 runnable 线程，定位到具体代码行</td>
+        <td>死循环 / 正则回溯爆炸</td>
+      </tr>
+      <tr>
+        <td>内存不断增长直到 OOM</td>
+        <td><code>jmap</code> + MAT</td>
+        <td>jmap 导出 Heap Dump（.hprof）→ MAT 看 Leak Suspects</td>
+        <td>Dominator Tree 找最大对象，Path to GC Roots（排除弱/软引用）</td>
+        <td>内存泄漏（HashMap/List 持有关闭资源、ThreadLocal 未 remove）</td>
+      </tr>
+      <tr>
+        <td>应用卡死 / 接口超时</td>
+        <td><code>jstack -l</code>（连续 3~5 次）</td>
+        <td>连续多次打印线程栈，对比哪些线程始终存在且状态不变</td>
+        <td>大量线程 BLOCKED / WAITING，等待同一把锁</td>
+        <td>死锁或活锁</td>
+      </tr>
+      <tr>
+        <td>Full GC 频繁但内存没降</td>
+        <td><code>jstat -gcutil</code></td>
+        <td>看 FGC 列快速上涨，O（老年代）回收后几乎不降</td>
+        <td>老年代维持 90%+，YGC 后大量对象直接升代</td>
+        <td>内存泄漏（大对象无法回收）或堆分配不足（-Xmx 给小了）</td>
+      </tr>
+      <tr>
+        <td>元空间（Metaspace）报警</td>
+        <td><code>jstat -gcutil</code>（看 M 列）</td>
+        <td>M 列持续 98%~100%，FGC 频繁但降不下来</td>
+        <td>检查是否动态生成大量类（CGLib 代理、Groovy、JSP 编译）</td>
+        <td>动态类加载泄漏（类加载器未卸载）</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <script type="text/template" id="mindmap-jvm-tools">
+# JVM工具与排障
+## 配置与编排
+### Apollo配置中心
+### 长连接推送+本地缓存
+### Docker打包隔离
+### K8s编排运维
+## JVM四大排障工具
+### jstat实时看板
+### 看GC类加载JIT
+### jstack线程堆栈
+### 查死锁CPU卡死
+### jmap内存快照
+### 导出Dump触发STW
+### MAT堆分析
+### Path to GC Root
+## Arthas在线诊断
+### 不重启实时探查
+### dashboard总览
+### thread -n5最忙线程
+### watch监控方法
+## 流量入口与容器
+### Nginx反向代理限流
+### Tomcat跑业务
+### Netty做RPC通信
+## 监控平台Janus
+### SkyWalking链路
+### Prometheus指标
+### ELK日志分析
+## 排障思路串联
+### jstat宏观报警
+### jstack微观现场
+### jmap根本证据
+  </script>
+</section>

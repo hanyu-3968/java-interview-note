@@ -1,0 +1,214 @@
+<section class="note" data-note-id="linux" data-note-title="Linux：常用命令与日志排查实战">
+
+  <p class="tldr">六大命令族 + 六大查日志技巧 + chmod 授权，覆盖日常运维。</p>
+
+  <h2>一、常用命令：六大族速查</h2>
+  <p class="tldr">按"做什么"分族：进程/防火墙/端口/软件/目录/文件。</p>
+  <p>Linux 命令按"做什么"分成六族，先认族再记命令，避免孤立背诵。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>族</th><th>命令</th><th>作用</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>进程</td><td><code>ps -ef | grep ssh</code></td><td>查看进程</td><td>户籍警：列出所有住户</td></tr>
+      <tr><td>进程</td><td><code>kill -9 7143</code></td><td>强杀进程</td><td>暴力拆迁：-9 不给善后</td></tr>
+      <tr><td>防火墙</td><td><code>systemctl status firewalld</code></td><td>查防火墙状态</td><td>门卫查岗</td></tr>
+      <tr><td>防火墙</td><td><code>systemctl stop firewalld</code></td><td>关防火墙</td><td>门卫下班</td></tr>
+      <tr><td>防火墙</td><td><code>systemctl start firewalld</code></td><td>开防火墙</td><td>门卫上班</td></tr>
+      <tr><td>端口</td><td><code>netstat -tlunp</code></td><td>查看监听端口</td><td>港口调度：看哪些码头在用</td></tr>
+      <tr><td>端口</td><td><code>curl http://www.baidu.com</code></td><td>模拟发送请求</td><td>试探电话：拨一下看通不通</td></tr>
+      <tr><td>软件</td><td><code>rpm -qa | grep java</code></td><td>查软件安装路径</td><td>查仓库账本</td></tr>
+      <tr><td>软件</td><td><code>which java</code></td><td>查命令所在路径</td><td>问路：java 在哪</td></tr>
+      <tr><td>系统</td><td><code>poweroff</code> / <code>reboot</code></td><td>关机 / 重启</td><td>总闸：拉电 vs 重启</td></tr>
+      <tr><td>编辑</td><td><code>vi</code> / <code>vim</code></td><td>编辑文件</td><td>i 进编辑，ESC 退</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：<mark>kill -9</mark> 是强制终止（SIGKILL，进程来不及清理资源），<mark>kill -15</mark>（默认）是优雅终止（SIGTERM，进程可做善后）。生产环境优先用 kill -15，只有进程卡死无响应才上 kill -9。</span></p>
+
+  <h2>二、常见目录：七个关键文件夹</h2>
+  <p class="tldr">root/bin/boot/etc/home/usr/opt 各司其职。</p>
+  <p>Linux 一切皆文件，目录有固定职责。记住七个关键目录，找配置/命令/软件不迷路。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>目录</th><th>作用</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>/root</code></td><td>系统管理员 Home 目录</td><td>老板办公室：root 的家</td></tr>
+      <tr><td><code>/bin</code></td><td>经常使用的命令</td><td>工具箱：常用工具随手拿</td></tr>
+      <tr><td><code>/boot</code></td><td>启动 Linux 时的核心文件</td><td>引擎舱：开机要用的核心</td></tr>
+      <tr><td><code>/etc</code></td><td>系统管理配置文件和子目录</td><td>配置档案室</td></tr>
+      <tr><td><code>/home</code></td><td>普通用户 Home 目录</td><td>员工宿舍：普通用户的家</td></tr>
+      <tr><td><code>/usr</code></td><td>默认安装软件的目录</td><td>默认仓库：软件默认装这</td></tr>
+      <tr><td><code>/opt</code></td><td>主机额外安装软件的目录</td><td>额外仓库：第三方软件装这</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：<mark>/usr</mark> 是系统自带软件默认安装目录（如 yum 装的），<mark>/opt</mark> 是用户额外安装的第三方软件目录（如自己解压的 JDK/Tomcat）。自己装的软件放 /opt，包管理器装的在 /usr。</span></p>
+
+  <h2>三、六大查日志技巧：日志排查核心</h2>
+  <p class="tldr">实时/上下文/时间范围/翻页/统计/动态六种打法。</p>
+  <p>日志排查是后端最高频操作。六个技巧按场景分类，遇到问题对号入座。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>编号</th><th>场景</th><th>命令</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>①</td><td>实时看关键字</td><td><code>tail -fn 10 clp-riskroute.log | grep 关键字</code></td><td>监听电台：实时跟新</td></tr>
+      <tr><td>②</td><td>关键字附近几行</td><td><code>cat clp-riskroute.log | grep -C 5 关键字</code></td><td>看上下文：前后 5 行</td></tr>
+      <tr><td>③</td><td>时间范围内关键字</td><td><code>sed -n '/2023-04-24 14:59:05,914/,/2023-04-24 14:59:07,548/p' clp-riskroute.log | grep 关键字</code></td><td>时间切片：只看这一段</td></tr>
+      <tr><td>④</td><td>less 翻页搜索</td><td><code>less clp-riskroute.log</code> → <code>shift+G</code> 到尾部 → <code>?关键字</code> 向上 / <code>/关键字</code> 向下，按 <code>n</code> 继续</td><td>翻书：跳到尾，前后搜</td></tr>
+      <tr><td>⑤</td><td>统计关键字数量</td><td><code>zgrep 关键字 clp-riskroute.2023-04-24.69.log.zip | wc -l</code></td><td>数人头：报错出现几次</td></tr>
+      <tr><td>⑥</td><td>动态/翻页/行号</td><td><code>tail -f a.txt</code> 动态 / <code>more a.txt</code> 翻页 / <code>nl a.txt</code> 带行号</td><td>三种看法：跟/翻/编号</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：<mark>tail -f</mark> 是实时跟踪（文件增长就显示），<mark>more</mark> 是一次性翻页（不能实时）；查实时日志用 tail -f，看历史大文件用 more 或 less。<mark>grep -C 5</mark> 显示前后各 5 行，<mark>grep -A 5</mark> 只显示后 5 行，<mark>grep -B 5</mark> 只显示前 5 行（C=Context, A=After, B=Before）。less 里 <mark>?关键字</mark> 向上搜，<mark>/关键字</mark> 向下搜，方向别搞反。<mark>zgrep</mark> 直接搜压缩包内容，不用先解压。</span></p>
+
+  <h2>四、基本命令：路径与用户</h2>
+  <p class="tldr">pwd 报坐标、cd 导航、ll/ls 列文件、su 切用户。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>命令</th><th>作用</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>ipconfig</code></td><td>查看 IP 地址</td><td>查门牌号</td></tr>
+      <tr><td><code>su</code></td><td>更换用户</td><td>换身份</td></tr>
+      <tr><td><code>pwd</code></td><td>打印当前路径</td><td>我在哪：报当前坐标</td></tr>
+      <tr><td><code>cd ..</code></td><td>返回上级文件夹</td><td>退一层</td></tr>
+      <tr><td><code>cd /</code></td><td>返回根路径</td><td>回到根</td></tr>
+      <tr><td><code>ll</code> / <code>ls</code></td><td>打印所有路径</td><td>列清单</td></tr>
+      <tr><td><code>ls -al</code></td><td>含隐藏文件全部列出</td><td>透视：连隐藏的也看</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：<mark>ll</mark> 是 <code>ls -l</code> 的别名（部分发行版），显示详细信息（权限/属主/大小/时间）；<mark>ls</mark> 只列文件名。<mark>ls -al</mark> 的 -a 显示隐藏文件（以 . 开头），-l 显示长格式。Linux 查 IP 实际多用 <code>ip addr</code> 或 <code>ifconfig</code>，原文 ipconfig 是 Windows 命令。</span></p>
+
+  <h2>五、文件夹与文件操作：增删改移拷</h2>
+  <p class="tldr">mkdir/touch/mv/rm/cp 五件套，rm -rf 最危险。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>操作</th><th>命令</th><th>作用</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>建文件夹</td><td><code>mkdir demo</code></td><td>创建文件夹</td><td>盖新房</td></tr>
+      <tr><td>建文件</td><td><code>touch a.txt</code></td><td>新建空文件</td><td>拿张白纸</td></tr>
+      <tr><td>移动</td><td><code>mv a.txt /usr/local/test/</code></td><td>移动文件</td><td>搬家</td></tr>
+      <tr><td>删文件</td><td><code>rm a.txt</code></td><td>删除文件</td><td>扔掉</td></tr>
+      <tr><td>删文件夹</td><td><code>rm -r</code></td><td>递归删文件夹</td><td>连锅端</td></tr>
+      <tr><td>强制删</td><td><code>rm -rf</code></td><td>强制递归删</td><td>推土机：不问直接推</td></tr>
+      <tr><td>拷贝</td><td><code>cp a.txt /usr/local/demo</code></td><td>复制文件</td><td>复印一份</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：<mark>rm -r</mark> 是递归删（会逐个问确认），<mark>rm -rf</mark> 是强制递归删（-f 不问直接删）。-r=recursive，-f=force。<mark>mv</mark> 既能移动也能重命名：<code>mv a.txt b.txt</code> 同目录下就是改名。<strong>绝对禁忌</strong>：<code>rm -rf /</code> 会删整个系统，生产环境永远先 pwd 确认路径再执行 rm -rf，最好用绝对路径且 Tab 补全避免误删。</span></p>
+
+  <h2>六、vim 编辑器：三模式与快捷键</h2>
+  <p class="tldr">一般/编辑/底行三模式，:wq 存退 :q! 弃退。</p>
+  <p>vim 有三个模式：一般模式、编辑模式、底行模式。模式切换是 vim 入门第一关，搞错模式所有按键都乱套。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>模式</th><th>进入方式</th><th>作用</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>一般模式</td><td><code>vim a.txt</code> 默认进入</td><td>移动/复制/粘贴/删除</td><td>待命状态</td></tr>
+      <tr><td>编辑模式</td><td>一般模式按 <code>i</code></td><td>输入文字</td><td>动笔写</td></tr>
+      <tr><td>底行模式</td><td>编辑模式按 <code>ESC</code> 再按 <code>:</code></td><td>保存/退出/定位/设置</td><td>下指令</td></tr>
+    </tbody>
+  </table>
+  <p>保存退出四件套：<code>:wq</code> 保存退出、<code>:q!</code> 不保存强制退出、<code>:set number</code> 显示行数、<code>:n</code> 定位到第 n 行。</p>
+  <p>一般模式快捷键：<code>yy</code> 复制一行、<code>p</code> 粘贴、<code>gg</code> 第一行、<code>G</code> 最后一行、<code>u</code> 撤销（编辑模式）、<code>ctrl+r</code> 反撤销（编辑模式）。</p>
+  <p><span class="supplement">补充：<mark>:wq</mark> 是保存退出，<mark>:q!</mark> 是不保存强制退出（改动丢弃），<mark>:q</mark> 是未改动时退出（有改动会报错）。<mark>i</mark> 在光标前插入，<mark>a</mark> 在光标后插入，<mark>o</mark> 下方新开一行，<mark>O</mark> 上方新开一行。<mark>gg</mark> 是第一行（两个 g），<mark>G</mark> 是最后一行（大写 G），大小写含义不同别按错。</span></p>
+
+  <h2>七、chmod 授权：三位数字读懂权限</h2>
+  <p class="tldr">r=4 w=2 x=1 相加，三位=所有者/同组/其他。</p>
+  <p>chmod 用三位数字表示权限：所有者/同组/其他各一位，每位是 r(4)+w(2)+x(1) 的和。看懂数字就懂权限。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>命令</th><th>数字拆解</th><th>含义</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>chmod 700 文件名</code></td><td>7=4+2+1 / 0 / 0</td><td>当前用户读写执行，同组和其他无任何权限</td><td>私人保险箱</td></tr>
+      <tr><td><code>chmod 666 文件名</code></td><td>6=4+2 / 6 / 6</td><td>所有组均有读写权限，无执行</td><td>公告栏：能看能写不能跑</td></tr>
+      <tr><td><code>chmod 777 文件名</code></td><td>7 / 7 / 7</td><td>最高权限，所有人读写执行</td><td>大门敞开</td></tr>
+      <tr><td><code>chmod -R 777 目录</code></td><td>递归</td><td>同时授予目录下所有子文件</td><td>全楼授权</td></tr>
+    </tbody>
+  </table>
+  <p>权限数字对照：7=rwx（读+写+执行）、6=rw-（读+写）、5=r-x（读+执行）、4=r--（只读）、0=---（无任何权限）。</p>
+  <p><span class="supplement">补充：<mark>r=4、w=2、x=1</mark>，权限数字是三者相加。三位数字顺序是<mark>所有者/同组用户/其他用户</mark>，不是"读/写/执行"。<mark>-R</mark> 是递归（大写 R），对目录下所有子文件子目录都生效；不加 -R 只改当前目录本身。<strong>生产禁忌</strong>：<code>chmod 777</code> 是最大权限，安全隐患极大，生产环境绝不用；按需给最小权限（如 750）。</span></p>
+
+  <h2>八、高频场景题</h2>
+  <p class="tldr">日志定位/端口占用/防火墙排查三连。</p>
+  <blockquote>
+    <p><strong>"线上日志报错，怎么快速定位？"</strong></p>
+    <p>先 <code>tail -fn 200 app.log | grep ERROR</code> 实时跟关键字；要上下文用 <code>grep -C 10 ERROR app.log</code> 看前后 10 行；要按时间范围用 <code>sed -n '/开始时间/,/结束时间/p' app.log | grep 关键字</code> 切片；大文件用 <code>less</code> 翻页，<code>shift+G</code> 跳尾部，<code>?关键字</code> 向上 <code>/关键字</code> 向下搜；要统计报错次数用 <code>zgrep ERROR app.log.zip | wc -l</code>（压缩包直接搜）。</p>
+  </blockquote>
+  <blockquote>
+    <p><strong>"端口被占用，怎么查是谁占的？"</strong></p>
+    <p><code>netstat -tlunp | grep 端口号</code> 查看该端口被哪个进程占用（最后一列是 PID/程序名），再用 <code>ps -ef | grep PID</code> 确认进程详情，确认无用后 <code>kill -9 PID</code> 释放。-t TCP、-l 监听、-u UDP、-n 显示数字端口、-p 显示进程。</p>
+  </blockquote>
+  <blockquote>
+    <p><strong>"防火墙挡了服务访问，怎么排查？"</strong></p>
+    <p>先 <code>systemctl status firewalld</code> 看防火墙是否在运行；在运行则 <code>systemctl stop firewalld</code> 临时关闭验证是否防火墙问题；确认后用 <code>curl http://目标IP:端口</code> 测试连通性。生产环境不建议直接关防火墙，应放行指定端口（<code>firewall-cmd --add-port=8080/tcp --permanent</code> + <code>--reload</code>）。</p>
+  </blockquote>
+
+  <h2>九、面试回答模板</h2>
+  <p class="tldr">问题本质 → 排查路径 → 根因与方案，三句话讲清。</p>
+  <blockquote>
+    <p><strong>问题本质是……</strong>（先说场景：日志排查/端口占用/防火墙/权限）。</p>
+    <p><strong>我的排查路径是……</strong>（命令 + 动作 + 看什么），因为……（为什么这个命令适合这个场景）。</p>
+    <p><strong>根因是……</strong>，处理方案是……（命令修复 / 配置调整 / 权限收敛）。</p>
+  </blockquote>
+  <p>例：问"线上日志怎么查"——本质是从海量日志里快速定位关键字；排查路径是先 <code>tail -f | grep</code> 实时跟，要上下文用 <code>grep -C</code>，要时间范围用 <code>sed -n</code> 切片，因为不同场景用不同工具效率最高；根因定位后处理方案是修代码或调配置，日志只是证据不是终点。</p>
+
+  <script type="text/template" id="mindmap-linux">
+# Linux常用命令与日志排查
+## 六大命令族
+### 进程族 ps -ef kill -9
+### 防火墙族 systemctl
+### 端口族 netstat curl
+### 软件族 rpm -qa which
+### 目录族 cd pwd ls
+### 文件族 vim cp mv rm
+## 七个关键目录
+### /root 管理员家
+### /bin 常用命令
+### /boot 启动核心
+### /etc 配置文件
+### /home 普通用户家
+### /usr 默认软件
+### /opt 额外软件
+## 六大查日志技巧
+### 实时 tail -f grep
+### 上下文 grep -C 5
+### 时间范围 sed -n
+### 翻页 less shift+G
+### 统计 zgrep wc -l
+### 动态 more nl
+## 基本命令
+### pwd 报坐标
+### cd .. 退一层
+### ll ls -al 列文件
+### su 切用户
+## 文件夹与文件操作
+### mkdir 建文件夹
+### touch 建文件
+### mv 搬家或改名
+### rm -rf 推土机慎用
+### cp 拷贝
+## vim 三模式
+### 一般模式 默认
+### 编辑模式 按 i
+### 底行模式 ESC 再 :
+### :wq 存退 :q! 弃退
+### yy 复制 p 粘贴
+### gg 头 G 尾
+### u 撤销 ctrl+r 反撤
+## chmod 授权
+### r=4 w=2 x=1 相加
+### 三位 所有者同组其他
+### 700 私人保险箱
+### 666 共享读写
+### 777 全开慎用
+### -R 递归授权
+## 高频场景题
+### 日志定位 tail grep sed
+### 端口占用 netstat kill
+### 防火墙排查 systemctl curl
+  </script>
+</section>

@@ -1,0 +1,181 @@
+<section class="note" data-note-id="kafka" data-note-title="Kafka架构与消息可靠性">
+
+  <p class="tldr">分布式消息队列，高吞吐低延迟，三端全链路保可靠。</p>
+
+  <h2>一、Kafka 是什么</h2>
+  <p class="tldr">消息缓冲池：生产者写，消费者读。</p>
+  <p><mark>分布式消息队列</mark>，核心能力是高吞吐、低延迟的数据流处理。可以理解为一个消息缓冲池——生产者往里写，消费者从里读。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>核心场景</th><th>具体说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>解耦系统</td><td>上下游通过 Kafka 通信，互不直接依赖</td></tr>
+      <tr><td>削峰填谷</td><td>突发流量先写入 Kafka，消费者按能力慢慢消费</td></tr>
+      <tr><td>日志收集</td><td>应用日志实时汇入 Kafka，供监控/分析系统消费</td></tr>
+      <tr><td>流处理</td><td>配合 Kafka Streams / Flink 做实时计算</td></tr>
+    </tbody>
+  </table>
+
+  <h2>二、7 大核心组件</h2>
+  <p class="tldr">Broker 存，Topic 分类，Partition 分片，Replica 保高可。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>组件</th><th>一句话解释</th><th>关键点</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>Broker</mark></td><td>Kafka 集群中的一台服务器</td><td>多个 Broker 组成集群，负责存储消息和处理请求</td></tr>
+      <tr><td><mark>Topic</mark></td><td>消息的逻辑分类（类似文件夹）</td><td>生产者发往 Topic，消费者从 Topic 拉取</td></tr>
+      <tr><td><mark>Partition（分区）</mark></td><td>Topic 的物理分片</td><td>每个 Partition 内部<mark>严格有序</mark>，是高吞吐的基石</td></tr>
+      <tr><td><mark>Replica（副本）</mark></td><td>Partition 的冗余备份</td><td>Leader 负责读写，Follower 只同步（ISR 机制）</td></tr>
+      <tr><td><mark>Offset（偏移量）</mark></td><td>消息在 Partition 中的唯一序号</td><td>消费者通过 Offset 记录消费进度，重启不丢</td></tr>
+      <tr><td><mark>Consumer Group</mark></td><td>多个消费者的集合</td><td>组内一个分区只能被一个消费者消费，实现水平扩展</td></tr>
+      <tr><td><mark>ZooKeeper / KRaft</mark></td><td>集群的"大脑"</td><td>管理 Broker 元数据、Leader 选举；2.8+ 逐步用 KRaft 替代 ZK</td></tr>
+    </tbody>
+  </table>
+  <p>记忆口诀：<mark>Broker 存数据，Topic 分类别，Partition 分片存，Replica 保高可，Offset 记进度，Group 管消费</mark>。</p>
+  <p><span class="supplement">补充：Topic 是逻辑分类，Partition 是物理分片。一个 Topic 可以有多个 Partition，每个 Partition 是独立的物理日志文件。Kafka 的高吞吐靠 Partition 分片并行，不是单机性能强。</span></p>
+
+  <h2>三、消费模式：Pull（拉取）</h2>
+  <p class="tldr">消费者自主控速 + 管理 Offset，空轮询用参数优化。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>优点</th><th>缺点</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>✅ 消费者自主控制速度，不会被洪流压垮</td>
+        <td>❌ 分区没数据时，消费者空轮询造成资源浪费</td>
+      </tr>
+      <tr>
+        <td>✅ 自主管理 Offset，宕机重启也能断点续传</td>
+        <td>可通过 <code>fetch.min.bytes</code> / <code>fetch.max.wait.ms</code> 优化</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>四、ACK 机制详解</h2>
+  <p class="tldr">acks=0 最低，acks=1 中等，acks=all 最高。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>ACK 值</th><th>含义</th><th>可靠性</th><th>适用场景</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>acks=0</code></td><td>发送出去就认为成功</td><td>❌ 最低，可能丢失</td><td>日志收集（允许丢少量）</td></tr>
+      <tr><td><mark><code>acks=1</code>（默认）</mark></td><td>Leader 写入成功即返回</td><td>⚠️ 中等，Follower 未同步时 Leader 宕机 → 丢失</td><td>一般业务场景</td></tr>
+      <tr><td><mark><code>acks=all</code>（或 -1）</mark></td><td>Leader 等待 ISR 所有副本确认</td><td>✅ 最高，不丢失</td><td>支付/交易等核心场景</td></tr>
+    </tbody>
+  </table>
+  <p>生产者最佳实践：<code>acks=all</code> + <code>retries=3</code> + <code>enable.idempotence=true</code>（开启幂等性，防止重复）。</p>
+  <p><span class="supplement">补充：acks=1 不是"可靠"。Leader 写入成功就返回，但 Follower 还没同步，此时 Leader 宕机就会丢消息。核心业务必须用 acks=all，等 ISR 所有副本都确认才算成功。</span></p>
+
+  <h2>五、如何保证消息不丢失（三端全链路）</h2>
+  <p class="tldr">生产端 acks=all，Broker 端禁脏选举，消费端先处理再提交。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>端</th><th>风险点</th><th>解决方案</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>生产者端</mark></td><td>发送失败但不知道</td><td><code>acks=all</code> + <code>retries</code> 重试 + 幂等性</td></tr>
+      <tr><td><mark>Broker 端</mark></td><td>Leader 切换导致数据未同步</td><td>禁止不同步副本参与 Leader 选举（<code>unclean.leader.election.enable=false</code>）</td></tr>
+      <tr><td><mark>消费者端</mark></td><td>先提交 Offset 再处理业务，业务失败 → 丢失</td><td>关闭自动提交（<code>enable.auto.commit=false</code>），先处理业务，成功后再手动提交 Offset</td></tr>
+    </tbody>
+  </table>
+
+  <h2>六、如何保证消息不被重复消费（幂等性）</h2>
+  <p class="tldr">重复消费不可避免，消费端做幂等是关键。</p>
+  <p>重复消费的根因：Consumer 处理完业务，但在提交 Offset 前宕机了，重启后从旧 Offset 拉取 → 重复消费。</p>
+  <ul>
+    <li><mark>消费端幂等</mark>：业务接口支持幂等（如用订单号 + 消息 ID 做唯一键防重）。</li>
+    <li><mark>生产者幂等</mark>：开启 <code>enable.idempotence=true</code>，Kafka 保证同分区内不重复。</li>
+  </ul>
+  <p>面试标准答案："重复消费不可避免，关键是消费端做好幂等性，通过唯一键或状态机保证多次处理结果一致。"</p>
+
+  <h2>七、如何保证消息顺序（分区有序）</h2>
+  <p class="tldr">只保证分区内有序，同 Key 进同分区 + 单线程消费。</p>
+  <p>核心原则：<mark>Kafka 只保证同一分区内有序，跨分区不保证</mark>。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>端</th><th>保证顺序的方式</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>生产者端</mark></td><td>相同 Key → 同一分区 → 保证顺序（按 key 哈希取模）；全局顺序（不推荐）= Topic 分区数设为 1</td></tr>
+      <tr><td><mark>Broker 端</mark></td><td>天然保证同一分区写入顺序 = 存储顺序 = Offset 递增</td></tr>
+      <tr><td><mark>消费者端</mark></td><td>一个分区在同一个消费组内只能被一个消费者消费（单线程串行）；<code>max.in.flight.requests.per.connection=1</code> 防止重试乱序</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充："全局顺序"和"分区顺序"是两回事。全局顺序要 Topic 分区数=1，彻底放弃并发，性能极差，一般不推荐；分区顺序靠相同 Key 进同一分区，既保顺序又保并发，是实际方案。</span></p>
+
+  <h2>八、Leader 选举机制</h2>
+  <p class="tldr">旧版 ZK 临时节点，新版 KRaft Raft 共识。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>版本</th><th>选举方式</th><th>关键机制</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>旧版（ZooKeeper）</td><td>Broker 竞争在 ZK 上创建 <code>/controller</code> 临时节点</td><td>首个成功创建的成为 Leader</td></tr>
+      <tr><td><mark>新版（KRaft）</mark></td><td>基于 Raft 共识算法</td><td>获得半数以上选票的节点成为 Active Controller</td></tr>
+    </tbody>
+  </table>
+  <p><mark>ISR（In-Sync Replicas）</mark>同步副本集合：与 Leader 保持实时同步的副本集合；决定 <code>acks=all</code> 时哪些副本写成功才算数；决定 Leader 宕机后谁能接管；通过 <code>replica.lag.time.max.ms</code> 动态维护。</p>
+  <p><span class="supplement">补充：生产环境必须禁止从 ISR 之外选举 Leader（unclean.leader.election.enable=false）。否则一个没同步完的副本当 Leader，会丢消息——可靠性比可用性更重要。</span></p>
+
+  <h2>九、消息重试与延迟机制</h2>
+  <p class="tldr">死信队列存失败消息，延时队列存定时消息。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>概念</th><th>作用</th><th>典型场景</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>死信队列（DLQ）</mark></td><td>存放多次消费失败的消息</td><td>消息重试达到上限后转入，待人工处理</td></tr>
+      <tr><td><mark>延时队列</mark></td><td>存放指定时间后才可消费的消息</td><td>订单超时关闭、定时任务、重试间隔控制</td></tr>
+    </tbody>
+  </table>
+
+  <h2>十、面试串联话术</h2>
+  <p class="tldr">架构→可靠性→顺序性→选型一气呵成。</p>
+  <blockquote>
+    <p>Kafka 是分布式消息队列，核心能力是高吞吐低延迟。核心组件包括 Broker（存储节点）、Topic（逻辑分类）、Partition（物理分片，保证单分区有序）、Replica（副本保证高可用，ISR 机制决定同步和选举）。</p>
+    <p>消息可靠性上，生产端用 acks=all 配合重试，消费端先处理业务再提交 Offset，防止消息丢失。重复消费靠消费端幂等性兜底。顺序性靠相同 Key 进同一分区 + 单线程消费保证。</p>
+    <p>新版本已用 KRaft 替代 ZooKeeper，通过 Raft 共识选主，不再依赖外部协调组件。日志收集场景下，Kafka 是"活数据管道"，既能实时监控告警，又能供离线数仓做报表。</p>
+  </blockquote>
+
+  <script type="text/template" id="mindmap-kafka">
+# Kafka
+## 核心定位
+### 分布式消息队列
+### 高吞吐低延迟
+### 解耦削峰日志流处理
+## 7大核心组件
+### Broker存储节点
+### Topic逻辑分类
+### Partition物理分片有序
+### Replica副本Leader读写
+### Offset记录消费进度
+### Consumer Group组内分区独占
+### ZK/KRaft集群协调
+## 消费模式Pull
+### 消费者自主控速
+### 自主管理Offset
+### fetch.min.bytes优化空轮询
+## ACK机制
+### acks=0最低可能丢
+### acks=1中等默认
+### acks=all最高等ISR确认
+## 消息不丢失三端
+### 生产端acks=all+重试+幂等
+### Broker端禁脏选举
+### 消费端先处理再提交
+## 消息不重复
+### 消费端幂等唯一键
+### 生产端enable.idempotence
+## 消息顺序性
+### 只保证分区内有序
+### 同Key进同分区
+### 单线程串行消费
+## Leader选举
+### 旧版ZK临时节点
+### 新版KRaft Raft共识
+### ISR同步副本集合
+  </script>
+</section>

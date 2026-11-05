@@ -1,0 +1,265 @@
+<section class="note" data-note-id="spring-cloud" data-note-title="SpringCloud：微服务治理全家桶">
+
+  <p class="tldr">注册发现 + 声明式调用 + 熔断降级 + 网关，微服务全家桶。</p>
+
+  <h2>一、SpringCloud 是什么</h2>
+  <p class="tldr">微服务治理平台，基于 SpringBoot 的全套分布式方案。</p>
+  <p>SpringCloud 是一个<mark>服务治理平台</mark>，提供服务注册与发现、配置中心、消息中心、负载均衡、数据监控等一整套分布式系统解决方案，基于 <mark>SpringBoot</mark> 实现。</p>
+  <ul>
+    <li>对比 Dubbo：Dubbo 是 RPC 框架只解决"服务间调用"；SpringCloud 提供全套分布式方案。</li>
+    <li>不是单一框架，而是组件统称（Netflix 体系 + Spring 自研 + 阿里 Sentinel/Nacos 等）。</li>
+  </ul>
+  <p><span class="supplement">补充：SpringCloud Alibaba 是兼容 SpringCloud 规范的另一套实现（Nacos/Sentinel/Seata），不是替代整个 SpringCloud，而是替换其中的注册中心、配置中心、容错组件。</span></p>
+
+  <h2>二、常用组件全景</h2>
+  <p class="tldr">注册 Eureka、均衡 Ribbon、容错 Hystrix、调用 Feign、网关 Gateway。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>组件</th><th>职责</th><th>一句话定位</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>Eureka</mark></td><td>服务注册中心</td><td>服务登记 + 发现</td><td>户籍管理处</td></tr>
+      <tr><td><mark>Ribbon</mark></td><td>客户端负载均衡</td><td>多实例挑一个调用</td><td>食堂多窗口排队</td></tr>
+      <tr><td><mark>Hystrix</mark></td><td>服务容错保护</td><td>熔断降级防雪崩</td><td>保险丝跳闸</td></tr>
+      <tr><td><mark>Feign</mark></td><td>声明式 HTTP 客户端</td><td>接口注解调远程</td><td>像调本地方法</td></tr>
+      <tr><td><mark>OpenFeign</mark></td><td>Feign 增强</td><td>支持 SpringMVC 注解</td><td>Feign + @RequestMapping</td></tr>
+      <tr><td>Zuul</td><td>API 网关（旧）</td><td>路由过滤安全限流</td><td>大门保安</td></tr>
+      <tr><td><mark>SpringCloudGateway</mark></td><td>API 网关（新）</td><td>Filter 链统一路由</td><td>升级版保安</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：Feign 与 OpenFeign 不是两个独立产品。OpenFeign 是 SpringCloud 在 Feign 基础上支持 SpringMVC 注解的增强版，现在说 Feign 一般就指 OpenFeign。</span></p>
+
+  <h2>三、Eureka 注册中心</h2>
+  <p class="tldr">AP 模型 + 心跳判活 + 自我保护 + 客户端缓存。</p>
+  <p>Eureka 采用 <mark>AP 模式</mark>（高可用优先于强一致），核心机制四件套：</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>机制</th><th>原理</th><th>作用</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>心跳机制</mark></td><td>提供者定期发心跳，超时未收到则注销</td><td>判活</td><td>定时打卡</td></tr>
+      <tr><td><mark>自我保护</mark></td><td>短时间大量失心跳时启动，不再剔除实例</td><td>防网络抖动误删</td><td>宁可错留不杀</td></tr>
+      <tr><td><mark>客户端缓存</mark></td><td>消费者本地缓存注册表</td><td>Eureka 全挂仍能调用</td><td>备用通讯录</td></tr>
+      <tr><td><mark>高可用</mark></td><td>多节点互相注册，请求失败自动切换</td><td>单点不瘫</td><td>多个办事处</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：Eureka 自我保护 vs ZooKeeper leader 选举——Eureka 网络分区时保留疑似宕机节点（AP）；ZooKeeper master 失联时重新选举 30~120 秒，选举期整个集群不可用（CP）。这是注册中心选 Eureka 而非 ZK 的关键理由。</span></p>
+
+  <h2>四、Consul 注册中心</h2>
+  <p class="tldr">CP 模式 + 主动健康检查 + 一站式服务治理。</p>
+  <p>Consul 基于 <mark>Go 语言</mark>开发，单可执行文件部署，与 Docker 无缝配合。流程：提供者启动 → 向 Consul 注册 IP/端口 → Consul <mark>每 10s 主动发健康检查</mark>（HTTP/TCP/脚本）→ 消费者从临时表任选一个 IP 调用。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>Eureka</th><th>Consul</th><th>记忆钩子</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>核心定位</td><td>纯服务注册发现</td><td><mark>一站式服务网格</mark>（发现+配置+健康）</td><td>单一 vs 全能</td></tr>
+      <tr><td>CAP 模型</td><td>AP（高可用优先）</td><td><mark>CP</mark>（强一致优先）</td><td>宁脏不停 vs 宁停不脏</td></tr>
+      <tr><td>健康检查</td><td>客户端心跳上报</td><td><mark>服务端主动探测</mark></td><td>被动打卡 vs 主动体检</td></tr>
+      <tr><td>配置中心</td><td>不支持</td><td>内置分布式 KV 存储</td><td>Consul 顺带管配置</td></tr>
+      <tr><td>多语言</td><td>仅 Java</td><td>HTTP/DNS API 多语言</td><td>Consul 跨语言</td></tr>
+      <tr><td>管理界面</td><td>基础</td><td>功能丰富 Web UI</td><td>Consul 自带仪表盘</td></tr>
+      <tr><td>项目状态</td><td>维护模式（停更）</td><td>活跃开发</td><td>Eureka 退休，Consul 当红</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：从 Eureka 到 Consul 不是"换个注册中心"，而是从"服务发现工具"升级到"服务治理平台"——多出配置中心、多语言支持、主动健康检查。面试答出"AP vs CP"和"被动心跳 vs 主动探测"两条即可。</span></p>
+
+  <h2>五、OpenFeign 声明式调用</h2>
+  <p class="tldr">动态代理 + SpringMVC 注解，像调本地方法调远程。</p>
+  <p>Feign 是<mark>声明式、模板化</mark>的 HTTP 客户端，封装 Ribbon + RestTemplate，实现面向接口编程：只需创建接口加注解，即可像调本地方法一样调远程。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>对比项</th><th>Feign</th><th>OpenFeign</th><th>记忆点</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>注解支持</td><td>Feign 自带注解</td><td>支持 <mark>SpringMVC 注解</mark></td><td>OpenFeign 更 Spring</td></tr>
+      <tr><td>动态代理</td><td>有</td><td>有，解析 @RequestMapping 生成实现类</td><td>同机制</td></tr>
+      <tr><td>负载均衡</td><td>内置 Ribbon</td><td>内置 Ribbon</td><td>同</td></tr>
+      <tr><td>SpringCloud 主推</td><td>旧</td><td>新，推荐使用</td><td>用 OpenFeign</td></tr>
+    </tbody>
+  </table>
+  <p>OpenFeign 使用四步：</p>
+  <ol>
+    <li>消费者添加 <code>spring-cloud-starter-openfeign</code> 依赖。</li>
+    <li>业务层接口加 <code>@FeignClient(name="服务名")</code> 声明调用目标。</li>
+    <li>抽象方法用 SpringMVC 注解（<code>@GetMapping</code>/<code>@PostMapping</code>）配置路径与参数。</li>
+    <li>启动类加 <code>@EnableFeignClients</code> 激活 Feign 组件。</li>
+  </ol>
+  <p><span class="supplement">补充：OpenFeign 的"像调本地方法"是动态代理实现的，不是真的本地调用——底层仍是 HTTP 请求，网络失败会抛异常，所以必须配合 Hystrix/Sentinel 做降级。@FeignClient 的 name 要与注册中心服务名一致。</span></p>
+
+  <h2>六、Hystrix 四大容错机制</h2>
+  <p class="tldr">资源隔离 + 熔断 + 降级 + 缓存，防雪崩基石。</p>
+  <p>Hystrix 通过四大机制防止单服务故障引发整个系统<mark>雪崩</mark>：</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>机制</th><th>核心逻辑</th><th>适用场景</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>资源隔离</mark></td><td>线程池/信号量隔离，限制故障传播</td><td>依赖服务多、需互不影响</td><td>一人一房间</td></tr>
+      <tr><td><mark>熔断器</mark></td><td>失败率达阈值自动断开，直接走降级</td><td>服务持续失败</td><td>保险丝跳闸</td></tr>
+      <tr><td><mark>服务降级</mark></td><td>失败/超时/熔断时执行 fallback 备选方案</td><td>兜底返回友好提示</td><td>备用方案</td></tr>
+      <tr><td><mark>请求缓存</mark></td><td>同上下文重复请求走缓存</td><td>减少重复网络开销</td><td>备忘录</td></tr>
+    </tbody>
+  </table>
+
+  <h3>6.1 资源隔离两种方式</h3>
+  <table class="cmp">
+    <thead>
+      <tr><th>方式</th><th>原理</th><th>优点</th><th>缺点</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>线程池隔离</mark></td><td>每个依赖服务独立线程池（支付/库存各一个）</td><td>故障不蔓延、最稳</td><td>线程切换开销、占资源</td><td>独立小房间</td></tr>
+      <tr><td><mark>信号量隔离</mark></td><td>计数器限并发请求数</td><td>轻量、无切换</td><td>不适合网络延迟场景</td><td>门口限流牌</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：线程池隔离有切换开销但隔离最彻底（推荐给可能网络延迟的服务）；信号量隔离轻量但隔离弱（推荐给内部纯计算、无网络调用的服务）。不是"信号量更好"，而是看场景。</span></p>
+
+  <h3>6.2 熔断器三态流转</h3>
+  <ul>
+    <li><mark>Closed（关闭）</mark>：正常调用，统计失败率。</li>
+    <li><mark>Open（打开）</mark>：失败率达阈值（如 10 秒内 20 请求且 50% 失败）→ 自动断开，所有请求直接走降级。</li>
+    <li><mark>Half-Open（半开）</mark>：一段时间后放少量请求探测，成功则关闭恢复，失败则继续打开。</li>
+  </ul>
+  <p><span class="supplement">补充：降级 ≠ 熔断。熔断是自动切断（机制），降级是返回备选（结果）。熔断打开会触发降级，但降级也会在普通超时/异常时单独触发——降级范围更广。</span></p>
+
+  <h2>七、Sentinel 服务哨兵</h2>
+  <p class="tldr">以流量为切入点，流控+熔断+降级+负载保护，替代 Hystrix。</p>
+  <p>Sentinel 是阿里开源的高性能、轻量级<mark>流量控制</mark>组件，可替代 Hystrix。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>对比项</th><th>Hystrix</th><th>Sentinel</th><th>记忆点</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>切入点</td><td>资源隔离为主</td><td>以<mark>流量</mark>为切入点</td><td>Sentinel 抓流量</td></tr>
+      <tr><td>维度</td><td>隔离+熔断+降级+缓存</td><td>流控+熔断降级+系统负载保护</td><td>Sentinel 多一维</td></tr>
+      <tr><td>配置</td><td>代码硬编码</td><td>控制台动态规则实时推送</td><td>Sentinel 可视化</td></tr>
+      <tr><td>状态</td><td>维护模式</td><td>活跃</td><td>用 Sentinel</td></tr>
+    </tbody>
+  </table>
+
+  <h2>八、网关服务</h2>
+  <p class="tldr">系统唯一入口，路由+鉴权+限流+监控，推荐 Gateway。</p>
+  <p>网关是系统对外的<mark>唯一入口</mark>，隔离外部访问与内部微服务。客户端请求先到网关，网关根据请求标识判断具体微服务地址再转发。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>职责</th><th>作用</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>动态路由</mark></td><td>按请求标识转发到具体微服务</td><td>快递分拣</td></tr>
+      <tr><td>负载均衡</td><td>多实例挑一个</td><td>多窗口排队</td></tr>
+      <tr><td><mark>身份认证</mark></td><td>统一鉴权，下游免重复校验</td><td>大门保安查证</td></tr>
+      <tr><td>安全审查</td><td>限流、黑白名单</td><td>安检</td></tr>
+      <tr><td>监控统计</td><td>统一埋点</td><td>门禁日志</td></tr>
+      <tr><td>缓存/静态响应</td><td>减少下游压力</td><td>前台备传单</td></tr>
+    </tbody>
+  </table>
+  <table class="cmp">
+    <thead>
+      <tr><th>方案</th><th>实现方式</th><th>特点</th><th>记忆点</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Nginx + Lua</td><td>服务器层负载均衡</td><td>高性能、配置式</td><td>老牌门神</td></tr>
+      <tr><td>Zuul</td><td>Ribbon + Eureka 实现负载均衡</td><td>Netflix 旧方案、阻塞式</td><td>已过气</td></tr>
+      <tr><td><mark>SpringCloudGateway</mark></td><td>Filter 链 + WebFlux</td><td>非阻塞、统一 API 路由</td><td>推荐新选型</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：Nginx 负载均衡是服务器层（按 IP/域名转发），Zuul/Gateway 负载均衡是应用层（靠 Ribbon+Eureka 按服务名转发）。SpringCloudGateway 用 WebFlux 非阻塞模型，性能优于 Zuul 的阻塞模型，是 Zuul 的官方替代。</span></p>
+
+  <h2>九、高频场景题</h2>
+  <p class="tldr">超时定位、自我保护、Feign 404 三类诊断。</p>
+  <blockquote>
+    <p><strong>"服务调用超时，怎么定位是网络、服务还是熔断？"</strong></p>
+    <p>先看 Hystrix 日志是否有 <code>short-circuited</code>（熔断打开）或 <code>timeout</code>（超时）——有熔断说明下游持续失败已触发熔断器，查下游服务健康；有超时但无熔断，调大 <code>feign.client.config.default.connectTimeout/readTimeout</code> 并排查下游 RT；两者都没有则查网络链路（ping/telnet 注册中心与服务实例）。</p>
+  </blockquote>
+  <blockquote>
+    <p><strong>"Eureka 自我保护模式触发了，要不要紧？"</strong></p>
+    <p>不要紧，反而是设计如此。自我保护在"短时间内大量心跳丢失"时启动，保留疑似宕机实例避免网络抖动误删。处理方式：确认是否真网络分区，网络恢复后会自动退出；若确实有实例下线，需手动清理或等心跳恢复。强行关闭（<code>eureka.server.enable-self-preservation=false</code>）反而可能在网络抖动时误删健康实例。</p>
+  </blockquote>
+  <blockquote>
+    <p><strong>"OpenFeign 调用报 404，但服务明明注册了？"</strong></p>
+    <p>九成是 <code>@FeignClient</code> 的 name 与注册中心服务名不一致，或接口上的 <code>@RequestMapping</code> 路径与提供者 Controller 路径不匹配。先在 Eureka/Consul 控制台核对服务名，再比对 Feign 接口注解路径与提供者 <code>@RestController</code> 路径是否完全一致（包括 <code>@PathVariable</code>/<code>@RequestParam</code> 参数名）。</p>
+  </blockquote>
+
+  <h2>十、面试回答模板</h2>
+  <p class="tldr">本质是哪一层 → 机制+取舍 → 实战选型配置。</p>
+  <blockquote>
+    <p><strong>问题本质是……</strong>（先说 SpringCloud 问的是哪一层：注册中心、调用、容错、还是网关）。</p>
+    <p><strong>机制是……</strong>（解释原理 + 关键组件），因为……（为什么这样设计，AP/CP 取舍、防雪崩等）。</p>
+    <p><strong>实战中我会……</strong>（选型 + 配置），例如……（Eureka vs Consul、Hystrix vs Sentinel、Gateway vs Zuul）。</p>
+  </blockquote>
+  <p>例：问"为什么用 Eureka 不用 ZooKeeper 做注册中心"——本质是注册中心的 CAP 取舍；机制上 Eureka 是 AP 模型，网络分区时保留所有实例保证可用，ZooKeeper 是 CP 模型，master 失联要 30~120 秒选举，选举期整个集群不可用；实战中我会选 Eureka/Consul 按业务对"可用 vs 一致"的偏好定，微服务场景一般可用性优先所以 Eureka 更合适，配合客户端缓存即使注册中心全挂也能短期调用。</p>
+
+  <h2>十一、最后复习：闭眼回忆 8 句</h2>
+  <p class="tldr">定位、组件、Eureka、Consul、Feign、Hystrix、Sentinel、网关。</p>
+  <ol>
+    <li><strong>定位</strong>：SpringCloud 是微服务治理全家桶，对比 Dubbo（仅 RPC）提供全套分布式方案，基于 SpringBoot。</li>
+    <li><strong>组件</strong>：Eureka 注册、Ribbon 均衡、Hystrix 容错、Feign/OpenFeign 调用、Zuul/Gateway 网关。</li>
+    <li><strong>Eureka</strong>：AP 模型 + 心跳判活 + 自我保护防误删 + 客户端缓存兜底 + 多节点高可用。</li>
+    <li><strong>Consul</strong>：CP 模型 + 主动健康检查（每 10s）+ KV 配置中心 + 多语言 + Web UI，活跃开发；Eureka 已维护模式。</li>
+    <li><strong>OpenFeign</strong>：动态代理 + SpringMVC 注解 + 内置 Ribbon，四步用：依赖、@FeignClient、@RequestMapping、@EnableFeignClients。</li>
+    <li><strong>Hystrix 四机制</strong>：资源隔离（线程池/信号量）、熔断（Closed/Open/Half-Open 三态）、降级（fallback）、缓存。</li>
+    <li><strong>Sentinel</strong>：以流量为切入点，流控+熔断+降级+系统负载保护，控制台动态规则，替代 Hystrix。</li>
+    <li><strong>网关</strong>：唯一入口做路由/鉴权/限流/监控；Nginx+Lua 服务器层 vs Zuul/Gateway 应用层，推荐 SpringCloudGateway（WebFlux 非阻塞）。</li>
+  </ol>
+
+  <h2>十二、怎么练才记得住</h2>
+  <p class="tldr">遮表自讲、场景题口述、换项目举例、默写总图。</p>
+  <ol>
+    <li>每次只看一个组件，遮住表格，先自己说出"职责 → 机制 → 易混点 → 适用场景"，再对照。</li>
+    <li>用"高频场景题"的 3 道题各讲 30 秒；卡住时只回看对应小节。</li>
+    <li>隔天再讲一遍，换成自己的项目例子；能解释"为什么选 Eureka 不选 ZK、为什么用 Gateway 不用 Zuul"才算会。</li>
+    <li>复习时轮流画"微服务全链路总图"和"Eureka vs Consul 对比表"；能默写出四大容错机制和熔断三态才算熟。</li>
+  </ol>
+
+  <script type="text/template" id="mindmap-spring-cloud">
+# SpringCloud微服务治理
+## 整体定位
+### 服务治理平台
+### 基于SpringBoot
+### 对比Dubbo全套方案
+## 常用组件
+### Eureka注册中心
+### Ribbon负载均衡
+### Hystrix容错保护
+### Feign声明式调用
+### OpenFeign支持SpringMVC
+### Zuul旧网关
+### SpringCloudGateway新网关
+## Eureka注册中心
+### AP模式高可用优先
+### 心跳机制判活
+### 自我保护防误删
+### 客户端缓存兜底
+### 多节点高可用
+## Consul注册中心
+### CP模式强一致优先
+### 主动健康检查每10s
+### 内置KV配置中心
+### 多语言HTTP/DNS API
+### Web UI可视化
+### 活跃开发Eureka维护
+## OpenFeign声明式调用
+### 动态代理生成实现类
+### 支持SpringMVC注解
+### 内置Ribbon负载均衡
+### 四步使用依赖注解配置激活
+## Hystrix四大容错
+### 资源隔离线程池信号量
+### 熔断器三态Closed Open HalfOpen
+### 服务降级fallback备选
+### 请求缓存减开销
+## Sentinel服务哨兵
+### 以流量为切入点
+### 流控熔断降级负载保护
+### 控制台动态规则
+### 替代Hystrix
+## 网关服务
+### 系统唯一入口
+### 动态路由负载均衡
+### 身份认证安全审查
+### 监控统计缓存
+### Nginx Lua服务器层
+### Zuul Gateway应用层
+### 推荐SpringCloudGateway
+  </script>
+</section>

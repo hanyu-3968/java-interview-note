@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第一步预览 · 笔记片段效果</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --text:#222; --muted:#888;
+    --accent:#3b82f6; --mark:#fff3bf; --sup-bg:#f2f2f2; --sup-bd:#bbb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    line-height:1.7;font-size:16px}
+  .wrap{max-width:760px;margin:0 auto;padding:16px}
+  .tabs{display:flex;gap:8px;margin-bottom:12px;position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:5}
+  .tabs button{flex:1;padding:12px;border:1px solid #ddd;border-radius:10px;background:var(--card);
+    font-size:15px;cursor:pointer;min-height:44px}
+  .tabs button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .panel{display:none;background:var(--card);border-radius:12px;padding:18px 20px;
+    box-shadow:0 1px 4px rgba(0,0,0,.06)}
+  .panel.active{display:block}
+  /* 笔记片段样式 */
+  .note h2{font-size:19px;margin:22px 0 6px;padding-bottom:4px;border-bottom:2px solid #eef2f7}
+  .note h2:first-of-type{margin-top:4px}
+  .note p{margin:8px 0}
+  .note ul,.note ol{margin:8px 0;padding-left:22px}
+  .note li{margin:4px 0}
+  .note code{background:#f0f3f7;padding:1px 6px;border-radius:4px;font-size:14px;color:#c7254e}
+  .note pre{background:#1e1e2e;color:#e6e6e6;padding:12px 14px;border-radius:8px;overflow:auto}
+  .note pre code{background:none;color:inherit;padding:0}
+  .note .tldr{color:var(--muted);font-size:14px;margin:2px 0 10px;
+    padding-left:10px;border-left:3px solid var(--accent);font-style:italic}
+  .note mark{background:var(--mark);padding:0 3px;border-radius:3px;color:#000}
+  .note .supplement{display:block;background:var(--sup-bg);border-left:2px dashed var(--sup-bd);
+    padding:8px 12px;margin:10px 0;font-size:14px;color:#555;border-radius:0 6px 6px 0}
+  .note table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px;display:block;overflow-x:auto}
+  .note th,.note td{border:1px solid #e3e6eb;padding:8px 10px;text-align:left;vertical-align:top}
+  .note th{background:#f0f3f7}
+  .note caption{caption-side:top;font-weight:600;margin-bottom:6px}
+  .note blockquote{margin:12px 0;padding:10px 14px;background:#f7f9fc;border-left:4px solid #c9d6e8;border-radius:0 8px 8px 0}
+  .note blockquote p{margin:6px 0}
+  /* 脑图区 */
+  .mindmap{width:100%;min-height:520px;border:1px solid #e3e6eb;border-radius:10px;background:#fff;
+    position:relative;overflow:auto;padding:10px}
+  .mindmap svg{max-width:100%;height:auto}
+  .mindmap .mm-loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--muted);font-size:14px}
+  .mm-badge{font-size:12px;color:#92400e;background:#fef3c7;border:1px solid #fde68a;
+    border-radius:6px;padding:3px 10px;margin-bottom:8px;display:inline-block}
+  /* 静态树降级脑图样式 */
+  .stree-root{padding:8px}
+  .stree{margin:0;padding:0}
+  .stree-node{display:inline-block;border-radius:8px;padding:6px 12px;font-size:14px;
+    font-weight:500;cursor:default;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  /* 层级深度颜色：depth1 最深，逐层变浅 */
+  .stree-node.d1{background:#1e40af;color:#fff;border:1px solid #1e3a8a}
+  .stree-node.d2{background:#3b82f6;color:#fff;border:1px solid #2563eb}
+  .stree-node.d3{background:#93c5fd;color:#1e3a8a;border:1px solid #60a5fa}
+  .stree-node.d4{background:#dbeafe;color:#1e3a8a;border:1px solid #bfdbfe}
+  .stree-kids{margin:6px 0 0 0;padding:6px 0 6px 20px;border-left:3px solid #93c5fd}
+  .stree .stree{margin-top:4px}
+  .hint{color:var(--muted);font-size:13px;margin:6px 2px 14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hint">第一步预览：下方切换各篇笔记查看正文片段；脑图用 mermaid mindmap 渲染。</div>
+  <div class="tabs">
+    <button class="active" data-tab="jvm-tools">JVM工具</button>
+    <button data-tab="jvm-gc">JVM垃圾回收</button>
+    <button data-tab="jvm-tuning">JVM调优</button>
+    <button data-tab="jvm-interview">JVM面试题</button>
+    <button data-tab="kafka">Kafka</button>
+    <button data-tab="rocketmq">RocketMQ</button>
+    <button data-tab="jvm-classloader">JVM类加载</button>
+    <button data-tab="spring">Spring</button>
+    <button data-tab="concurrent">并发编程</button>
+    <button data-tab="collections">集合</button>
+    <button data-tab="java-basics">Java基础</button>
+    <button data-tab="thread-pool">线程池</button>
+    <button data-tab="springboot">SpringBoot</button>
+    <button data-tab="mysql-index">MySQL索引</button>
+    <button data-tab="lock-mechanism">锁机制</button>
+    <button data-tab="redis">Redis</button>
+    <button data-tab="threadlocal-cas">ThreadLocal/CAS</button>
+    <button data-tab="security">安全</button>
+    <button data-tab="linux">Linux</button>
+    <button data-tab="mybatis">MyBatis</button>
+    <button data-tab="oceanbase">OceanBase</button>
+    <button data-tab="file-storage">文件存储</button>
+    <button data-tab="mongodb">MongoDB</button>
+    <button data-tab="spring-cloud">SpringCloud</button>
+    <button data-tab="cs-fundamentals">计算机基础</button>
+    <button data-tab="biz-pitfalls">业务开发错误</button>
+    <button data-tab="network">网络传输</button>
+    <button data-tab="mysql">MySQL</button>
+    <button data-tab="architecture">架构设计</button>
+    <button data-tab="cloud-native">云原生</button>
+    <button data-tab="zookeeper">ZooKeeper</button>
+  </div>
+
+  <div class="panel active" id="panel-jvm-tools">
+    <div id="text-jvm-tools"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-jvm-tools"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-jvm-gc">
+    <div id="text-jvm-gc"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-jvm-gc"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-jvm-tuning">
+    <div id="text-jvm-tuning"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-jvm-tuning"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-jvm-interview">
+    <div id="text-jvm-interview"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-jvm-interview"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-kafka">
+    <div id="text-kafka"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-kafka"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-rocketmq">
+    <div id="text-rocketmq"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-rocketmq"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-jvm-classloader">
+    <div id="text-jvm-classloader"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-jvm-classloader"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-spring">
+    <div id="text-spring"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-spring"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-concurrent">
+    <div id="text-concurrent"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-concurrent"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-collections">
+    <div id="text-collections"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-collections"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-java-basics">
+    <div id="text-java-basics"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-java-basics"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-thread-pool">
+    <div id="text-thread-pool"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-thread-pool"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-springboot">
+    <div id="text-springboot"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-springboot"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-mysql-index">
+    <div id="text-mysql-index"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-mysql-index"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-lock-mechanism">
+    <div id="text-lock-mechanism"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-lock-mechanism"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-redis">
+    <div id="text-redis"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-redis"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-threadlocal-cas">
+    <div id="text-threadlocal-cas"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-threadlocal-cas"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-security">
+    <div id="text-security"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-security"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-linux">
+    <div id="text-linux"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-linux"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-mybatis">
+    <div id="text-mybatis"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-mybatis"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-oceanbase">
+    <div id="text-oceanbase"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-oceanbase"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-file-storage">
+    <div id="text-file-storage"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-file-storage"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-mongodb">
+    <div id="text-mongodb"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-mongodb"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-spring-cloud">
+    <div id="text-spring-cloud"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-spring-cloud"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-cs-fundamentals">
+    <div id="text-cs-fundamentals"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-cs-fundamentals"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-biz-pitfalls">
+    <div id="text-biz-pitfalls"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-biz-pitfalls"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-network">
+    <div id="text-network"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-network"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-mysql">
+    <div id="text-mysql"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-mysql"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-architecture">
+    <div id="text-architecture"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-architecture"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-cloud-native">
+    <div id="text-cloud-native"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-cloud-native"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+
+  <div class="panel" id="panel-zookeeper">
+    <div id="text-zookeeper"></div>
+    <h3 style="margin:18px 0 6px">🧠 脑图</h3>
+    <div class="mindmap" id="mm-zookeeper"><div class="mm-loading">脑图加载中…</div></div>
+  </div>
+</div>
+
+<script src="lib/mermaid.min.js" onerror="window.__mermaidFail=true"></script>
+<script>
+  // mermaid 初始化（本地加载，确保 window.mermaid 存在）
+  function initMermaid(){
+    if(window.mermaid){
+      mermaid.initialize({ startOnLoad:false, theme:'default', securityLevel:'loose', mindmap:{ padding:16 } });
+    } else {
+      window.__mermaidFail = true;
+    }
+  }
+
+  // 把 #/##/### Markdown 转成 mermaid mindmap 缩进语法
+  function mdToMermaid(md, rootText){
+    const lines = md.split('\n').map(l=>l.replace(/\r$/,''));
+    const heads = [];
+    for(const raw of lines){
+      const line = raw.trim();
+      if(!line) continue;
+      const m = line.match(/^(#{1,4})\s+(.*)$/);
+      if(!m) continue;
+      heads.push({ depth:m[1].length, text:m[2].trim() });
+    }
+    if(heads.length === 0) return 'mindmap\n  root(("'+(rootText||'空')+'"))';
+
+    let out = 'mindmap\n';
+    const minDepth = heads[0].depth;
+    const norm = heads.map(h => ({ depth: h.depth - minDepth + 1, text: h.text }));
+    // root 用圆形节点 (("文本"))
+    out += '  root(("' + escNode(norm[0].text) + '"))\n';
+    for(let i=1; i<norm.length; i++){
+      const indent = '  '.repeat(norm[i].depth);
+      // 子节点用方括号节点 ["文本"]，避免特殊字符解析问题
+      out += indent + '["' + escNode(norm[i].text) + '"]\n';
+    }
+    return out;
+  }
+  // mermaid 节点文本转义：把双引号转成单引号，避免破坏 ["..."] 包裹
+  function escNode(s){
+    return String(s).replace(/"/g, "'");
+  }
+
+  const IDS = ['jvm-tools','jvm-gc','jvm-tuning','jvm-interview','kafka','rocketmq','jvm-classloader','spring','concurrent','collections','java-basics','thread-pool','springboot','mysql-index','lock-mechanism','redis','threadlocal-cas','security','linux','mybatis','oceanbase','file-storage','mongodb','spring-cloud','cs-fundamentals','biz-pitfalls','network','mysql','architecture','cloud-native','zookeeper'];
+  const TITLES = {
+    'jvm-tools':'JVM工具与排障',
+    'jvm-gc':'JVM垃圾回收',
+    'jvm-tuning':'JVM调优',
+    'jvm-interview':'JVM面试深度追问',
+    'kafka':'Kafka',
+    'rocketmq':'RocketMQ',
+    'jvm-classloader':'JVM类加载',
+    'spring':'Spring核心',
+    'concurrent':'并发编程',
+    'collections':'Java集合',
+    'java-basics':'Java基础',
+    'thread-pool':'线程池',
+    'springboot':'SpringBoot',
+    'mysql-index':'MySQL索引',
+    'lock-mechanism':'锁机制',
+    'redis':'Redis',
+    'threadlocal-cas':'ThreadLocal与CAS',
+    'security':'安全',
+    'linux':'Linux',
+    'mybatis':'MyBatis',
+    'oceanbase':'OceanBase',
+    'file-storage':'文件存储',
+    'mongodb':'MongoDB',
+    'spring-cloud':'SpringCloud',
+    'cs-fundamentals':'计算机基础',
+    'biz-pitfalls':'业务开发错误',
+    'network':'网络传输',
+    'mysql':'MySQL核心',
+    'architecture':'架构设计',
+    'cloud-native':'云原生',
+    'zookeeper':'ZooKeeper'
+  };
+
+  async function loadFragments(){
+    const out = {};
+    for(const id of IDS){
+      const res = await fetch('notes/'+id+'.html');
+      out[id] = await res.text();
+    }
+    return out;
+  }
+  function renderText(id, html){
+    document.getElementById('text-'+id).innerHTML = html;
+  }
+  function extractMd(html, id){
+    const m = html.match(new RegExp('<script[^>]*id="mindmap-'+id+'"[^>]*>([\\s\\S]*?)<\\/script>'));
+    return m ? m[1] : '# 空';
+  }
+
+  // 用 mermaid 渲染脑图；失败降级为静态树
+  async function renderMindmap(id, md){
+    const el = document.getElementById('mm-'+id);
+    el.innerHTML = '<div class="mm-loading">渲染中…</div>';
+    const mmdCode = mdToMermaid(md, TITLES[id]);
+
+    // 确保 mermaid 已初始化
+    initMermaid();
+    if(window.mermaid && !window.__mermaidFail){
+      try{
+        const { svg } = await mermaid.render('mm-svg-'+id, mmdCode);
+        el.innerHTML = svg;
+        el.dataset.mode = 'mermaid';
+        return;
+      }catch(e){
+        console.warn('mermaid render failed for', id, ':', e, '\ncode:\n', mmdCode);
+      }
+    }
+    // 降级：静态树
+    const tree = mdToTree(md);
+    el.innerHTML = '<div class="mm-badge">静态脑图（mermaid CDN 未加载或渲染失败，已降级）</div>' + buildStaticTree(tree, true);
+    el.dataset.mode = 'static';
+  }
+
+  // ---- 降级用：Markdown -> 树 -> 静态 HTML ----
+  function mdToTree(md){
+    const root = { content:'', children:[], depth:0 };
+    const stack = [root];
+    for(const raw of md.split('\n').map(l=>l.replace(/\r$/,''))){
+      const line = raw.trim();
+      if(!line) continue;
+      const m = line.match(/^(#{1,4})\s+(.*)$/);
+      if(!m) continue;
+      const depth = m[1].length;
+      const node = { content:m[2].trim(), children:[], depth };
+      while(stack.length > 1 && stack[stack.length-1].depth >= depth) stack.pop();
+      stack[stack.length-1].children.push(node);
+      stack.push(node);
+    }
+    return root;
+  }
+  function buildStaticTree(node, isRoot, depth){
+    if(!node) return '';
+    depth = depth || 1;
+    if(isRoot){
+      if(!node.children || !node.children.length) return '';
+      let html = '<div class="stree-root">';
+      node.children.forEach(c => { html += buildStaticTree(c, false, 1); });
+      html += '</div>';
+      return html;
+    }
+    const dClass = 'd' + Math.min(depth, 4);
+    let html = '';
+    if(node.content){
+      html += '<div class="stree"><div class="stree-node '+dClass+'">'+escapeHtml(node.content)+'</div>';
+    } else {
+      html += '<div class="stree">';
+    }
+    if(node.children && node.children.length){
+      html += '<div class="stree-kids">';
+      node.children.forEach(c => { html += buildStaticTree(c, false, depth+1); });
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+  function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  // tab 切换
+  document.querySelectorAll('.tabs button').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('panel-'+btn.dataset.tab).classList.add('active');
+    });
+  });
+
+  (async()=>{
+    const FRAGMENTS = await loadFragments();
+    for(const id of IDS){
+      renderText(id, FRAGMENTS[id]);
+      await renderMindmap(id, extractMd(FRAGMENTS[id], id));
+    }
+  })();
+</script>
+</body>
+</html>

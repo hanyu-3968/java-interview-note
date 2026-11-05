@@ -1,0 +1,220 @@
+<section class="note" data-note-id="file-storage" data-note-title="文件存储：OSS/FastDFS/MinIO与Elasticsearch">
+
+  <p class="tldr">OSS/FastDFS/MinIO 存文件，ES 毫秒检索，信贷组合 OSS+ES+MySQL。</p>
+
+  <h2>一、三者定位：档案室 vs 超级图书管理员</h2>
+  <p class="tldr">文件存储存实体，ES 只记位置不存原件。</p>
+  <p>用信贷公司档案管理打比方：<mark>FastDFS/OSS/MinIO</mark> 是档案室仓库存实体文件，<mark>Elasticsearch</mark> 是检索系统只记位置不存原件。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>组件</th><th>比喻角色</th><th>存什么</th><th>典型动作</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>FastDFS/OSS/MinIO</mark></td><td>档案室仓库</td><td>客户身份证扫描件、银行流水 PDF、合同照片等实体文件</td><td>存文件、取文件</td></tr>
+      <tr><td><mark>Elasticsearch</mark></td><td>超级图书管理员检索系统</td><td>不存实体文件，只记录"张三的借款合同在 A 区 3 号柜"</td><td>输入"逾期超 30 天的北京客户"毫秒级返回档案清单，但手里没有档案原件</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：Elasticsearch 不存实体文件，它存的是结构化 JSON 文档和倒排索引。问"合同 PDF 存哪"答案是 OSS/FastDFS，问"查所有逾期客户"答案才是 ES。两者职责完全不同，不能互相替代。</span></p>
+
+  <h2>二、FastDFS：自建轻量级分布式文件系统</h2>
+  <p class="tldr">Tracker 调度指路，Storage 干活存储。</p>
+  <p>纯开源系统，适合企业自己搭建。核心是 <mark>Tracker 调度 + Storage 干活</mark>。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>组件</th><th>职责</th><th>关键点</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>Tracker Server</mark></td><td>跟踪服务器，调度中心</td><td>不存文件，只记录哪个 Storage 有空闲空间，给客户端指路 + 负载均衡</td></tr>
+      <tr><td><mark>Storage Server</mark></td><td>存储服务器，干活的仓库</td><td>真正存储文件数据和元数据；通常以 Group（分组）为单位，组内多台机器互为备份</td></tr>
+      <tr><td><mark>Client</mark></td><td>业务系统</td><td>通过 Client API 向 Tracker 询问地址，再直接向 Storage 上传/下载</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：Tracker 不存文件数据，只存"哪个 Storage 有空位"的元信息（与 NameNode 存元数据、DataNode 存真实块的思想类似）。客户端拿到地址后直接与 Storage 通信上传/下载，Tracker 不做数据中转，避免成为瓶颈。</span></p>
+
+  <h2>三、OSS：云厂商对象存储服务</h2>
+  <p class="tldr">Bucket 存空间，Object=Key+Data+Meta，Endpoint 访问域名。</p>
+  <p>如阿里云 OSS，云厂商提供的<mark>海量、安全、低成本</mark>的云端文件托管服务。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>组件</th><th>含义</th><th>类比</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>Bucket</mark></td><td>存储空间</td><td>类似文件夹的根目录，命名全局唯一</td></tr>
+      <tr><td><mark>Object</mark></td><td>对象，OSS 中存储数据的基本单元</td><td>由 Key（文件名）+ Data（用户数据）+ Meta（元数据）三部分组成</td></tr>
+      <tr><td><mark>Endpoint</mark></td><td>访问域名</td><td>不同地域 OSS 对外服务的网络地址，如 <code>oss-cn-hangzhou.aliyuncs.com</code></td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：OSS 的 Object 三要素是 Key + Data + Meta。Key 是文件名（不是路径），Data 是文件内容，Meta 是元数据（如 Content-Type、自定义标签）。一个 Object 没有传统文件夹层级，所谓"目录"只是 Key 前缀的模拟。</span></p>
+
+  <h2>四、MinIO：云原生对象存储</h2>
+  <p class="tldr">Golang 实现，自带 UI，GB/s 读写，S3 兼容。</p>
+  <p>专为海量数据存储、人工智能、大数据分析而设计的对象存储系统，主要用 <mark>Golang</mark> 实现，运行在操作系统用户态空间，客户端与服务器之间采用 HTTP/HTTPS 通信协议。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>优势点</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>安装部署简单</td><td>单二进制文件启动，开箱即用</td></tr>
+      <tr><td>操作简单</td><td>自带 UI 管理界面，可视化操作</td></tr>
+      <tr><td><mark>性能优秀</mark></td><td>可达每秒 GB 级别读写速度</td></tr>
+      <tr><td>云原生支持</td><td>支持主流云原生容器化部署（K8s 友好）</td></tr>
+      <tr><td>多语言 SDK</td><td>支持主流编程语言客户端接入</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：MinIO 和 OSS 都是对象存储，API 风格兼容 S3。区别是 MinIO 是自建私有云（自己部署在机房或 K8s），OSS 是公有云托管（阿里云运维）。私有云合规强但要自己运维，公有云免运维但数据在厂商侧。</span></p>
+
+  <h2>五、Elasticsearch：搜索与分析引擎</h2>
+  <p class="tldr">分布式+倒排索引+分片并行，PB 级毫秒检索。</p>
+  <p>用来查数据，特别是海量数据的<mark>全文检索和复杂分析</mark>。核心是分布式 + 倒排索引。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>组件</th><th>含义</th><th>类比</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>Cluster / Node</mark></td><td>集群和节点，ES 是分布式的</td><td>节点有不同角色：主节点管集群状态、数据节点存数据执行查询、协调节点分发请求合并结果</td></tr>
+      <tr><td><mark>Index</mark></td><td>索引</td><td>类似 MySQL 中的数据库或表，是一类相似文档的集合</td></tr>
+      <tr><td><mark>Document</mark></td><td>文档</td><td>最小的数据单元，一条条 JSON 格式数据</td></tr>
+      <tr><td><mark>Shard</mark></td><td>分片</td><td>索引被拆分成多个分片分散存储在不同节点上，这是 ES 能处理 PB 级数据且查询极快的核心原因</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：ES 的 Index 不是 MySQL 的索引概念！ES 的 Index ≈ MySQL 的"库/表"（一类文档集合），而 ES 真正的"索引"是底层倒排索引（词项 → 文档 ID 列表）。Shard 是 ES 横向扩展的核心——索引分片分散到多节点，并行查询所以快。</span></p>
+
+  <h2>六、三者核心区别：定位与场景</h2>
+  <p class="tldr">FastDFS 自建，OSS 上云，ES 专攻检索。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>FastDFS</th><th>OSS</th><th>Elasticsearch</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>核心定位</td><td>自建的文件存储系统</td><td>云服务的文件存储系统</td><td>搜索与数据分析引擎</td></tr>
+      <tr><td>存储内容</td><td>图片/视频/文档等非结构化文件</td><td>海量非结构化文件</td><td>结构化的文本数据（JSON）</td></tr>
+      <tr><td>运维成本</td><td>高（自己买服务器部署集群）</td><td>极低（免运维）</td><td>中高（集群调优有门槛）</td></tr>
+      <tr><td>扩展性</td><td>良好（手动扩容）</td><td>极强（无限弹性）</td><td>极强（分片横向扩展）</td></tr>
+      <tr><td>典型场景</td><td>中小团队自建网盘/相册/日志存储</td><td>网站静态资源/大数据备份/音视频点播</td><td>电商商品搜索/日志分析 ELK/风控检索</td></tr>
+    </tbody>
+  </table>
+  <p><mark>速记</mark>：FastDFS 自建费钱费力、OSS 上云省心弹性、ES 专攻检索分析——三者不是替代关系，而是按"自建/上云/检索"分层选型。</p>
+
+  <h2>七、OSS 与 FastDFS 核心区别：六维对比</h2>
+  <p class="tldr">公有云托管 vs 自建开源，六维全面对比。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>核心维度</th><th>OSS（公有云托管）</th><th>FastDFS（自建开源）</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>运维成本</td><td>极低，免运维</td><td>极高，自己买服务器部署集群</td></tr>
+      <tr><td><mark>可靠性</mark></td><td>极高，12 个 9 数据持久性，自带跨机房跨区域容灾备份</td><td>依赖自身能力，组内副本冗余；机房出大问题数据风险高</td></tr>
+      <tr><td>扩展性</td><td>无限弹性，用多少买多少</td><td>需手动扩容，采购新机器加入集群</td></tr>
+      <tr><td>访问速度</td><td>公网极快，天然结合 CDN 加速</td><td>内网快、公网慢</td></tr>
+      <tr><td>功能生态</td><td>丰富，自带图片处理/视频截帧/生命周期管理</td><td>基础，仅核心文件存取，高级功能需自己写代码</td></tr>
+      <tr><td>计费模式</td><td>按量付费</td><td>自购硬件，前期一次性投入</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：OSS 的"12 个 9"指数据持久性（99.9999999999%，即一万亿个对象平均丢不到 1 个），不是"可用性"。可用性是服务能不能访问，持久性是数据会不会丢——信贷核心资产看的是持久性。</span></p>
+
+  <h2>八、信贷公司选型：OSS + ES + MySQL 组合</h2>
+  <p class="tldr">OSS 保险箱+ES 检索引擎+MySQL 账本。</p>
+  <p>现代化信贷公司组合使用：<mark>OSS 像保险箱托管合同证件，ES 建客户索引和风控平台，底层业务交易数据放 MySQL/OceanBase</mark>。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>场景</th><th>选型</th><th>理由</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>客户资质与合同文件</td><td><mark>首选 OSS</mark></td><td>信贷资料是核心资产绝对不能丢，OSS 提供 12 个 9 持久性 + 跨区域容灾 + ACL 权限控制 + 数据加密</td></tr>
+      <tr><td>客户资质与合同文件</td><td>备选 FastDFS</td><td>仅当公司有极强合规要求，规定所有数据必须存本地私有机房、严禁上公有云时</td></tr>
+      <tr><td>客户信息与风控检索</td><td><mark>必选 Elasticsearch</mark></td><td>极速进件检索（信审输入姓名/手机号毫秒级返回 + 高亮）+ 复杂风控画像（聚合统计近一月某地区逾期率飙升）+ 日志审计合规（ELK 实时监控异常操作）</td></tr>
+      <tr><td>底层业务交易数据</td><td>MySQL/OceanBase</td><td>强事务交易数据，与 OSS/ES 互补</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：信贷选型不是"三选一"而是"组合拳"。OSS 存文件原件、ES 做检索分析、MySQL 存交易数据——三者各司其职。文件存 OSS 后，文件元信息（如客户 ID、文件 URL、合同编号）会同步到 ES/MySQL，检索时先查 ES 拿到 URL，再去 OSS 取原件。</span></p>
+
+  <h2>九、高频场景题</h2>
+  <p class="tldr">信贷选型/OSS vs FastDFS/ES 为什么快。</p>
+
+  <h3>"信贷公司文件存储怎么选？"</h3>
+  <p>先看合规要求：无强制本地化要求 → <mark>首选 OSS</mark>（12 个 9 持久性 + 跨区域容灾 + ACL + 加密，核心资产不丢）；有极强合规要求必须本地机房 → <mark>备选 FastDFS</mark>（自建可控但运维成本高）。检索层<mark>必选 ES</mark>（毫秒级进件检索 + 风控聚合 + ELK 日志审计），底层交易数据放 MySQL/OceanBase。组合拳：OSS 当保险箱、ES 当检索引擎、MySQL 当账本。</p>
+
+  <h3>"OSS 和 FastDFS 到底差在哪？"</h3>
+  <p>本质是<mark>公有云托管 vs 自建开源</mark>。六维对比：运维（OSS 免运维 vs FastDFS 极高）、可靠性（OSS 12 个 9 跨区域容灾 vs FastDFS 组内副本机房风险）、扩展性（OSS 无限弹性 vs FastDFS 手动扩容）、速度（OSS 公网快+CDN vs FastDFS 内网快公网慢）、功能（OSS 丰富图片处理/视频截帧 vs FastDFS 基础）、计费（OSS 按量 vs FastDFS 一次性投入）。除非合规强制本地化，否则 OSS 综合更优。</p>
+
+  <h3>"Elasticsearch 为什么查得快？"</h3>
+  <p>核心是<mark>分布式 + 倒排索引 + 分片并行</mark>。索引被拆成多个 Shard 分散到不同 Node，查询时协调节点分发到各分片并行检索，再合并结果。底层倒排索引把"词项 → 文档 ID 列表"建好，输入关键词直接命中文档，不用全表扫描。所以 PB 级数据也能毫秒级返回。</p>
+
+  <h2>十、面试回答模板</h2>
+  <p class="tldr">本质→机制→实战三句话讲清一题。</p>
+  <blockquote>
+    <p><strong>问题本质是……</strong>（先说问的是哪一层：存文件、查数据、还是选型）。</p>
+    <p><strong>机制是……</strong>（解释定位 + 关键组件），因为……（为什么这样设计）。</p>
+    <p><strong>实战中我会……</strong>（具体选型 + 场景），例如……（业务例子）。</p>
+  </blockquote>
+  <blockquote>
+    <p>例：问"信贷公司怎么选文件存储和检索"——本质是存文件（OSS/FastDFS）和查数据（ES）两层职责不同；机制是 OSS 提供 12 个 9 持久性 + 跨区域容灾托管合同原件，ES 用倒排索引 + 分片并行做毫秒级检索，底层交易数据放 MySQL；实战中客户身份证/流水/合同存 OSS，文件元信息同步到 ES 建索引，信审输入姓名手机号 ES 毫秒级返回匹配客户 + 高亮，风控用 ES 聚合统计某地区逾期率飙升，操作日志接 ELK 满足金融合规审计。</p>
+  </blockquote>
+
+  <h2>十一、最后复习：闭眼回忆 8 句</h2>
+  <p class="tldr">定位→组件→区别→选型一气呵成。</p>
+  <ol>
+    <li><strong>三者定位</strong>：FastDFS/OSS/MinIO 是档案室存实体文件，ES 是检索系统只记位置不存原件——职责不同不能互替。</li>
+    <li><strong>FastDFS 组件</strong>：Tracker 调度指路（不存文件）+ Storage 干活存储（Group 组内备份）+ Client 直接与 Storage 通信。</li>
+    <li><strong>OSS 三要素</strong>：Bucket（存储空间）+ Object（Key+Data+Meta）+ Endpoint（访问域名）；12 个 9 是数据持久性不是可用性。</li>
+    <li><strong>MinIO 特点</strong>：Golang 实现 + HTTP/HTTPS 通信 + 自带 UI + GB/s 读写 + 云原生 K8s 友好 + S3 兼容，私有云自建对象存储。</li>
+    <li><strong>ES 组件</strong>：Cluster/Node（主/数据/协调角色）+ Index（≈库表）+ Document（JSON）+ Shard（分片横向扩展，PB 级快的核心）。</li>
+    <li><strong>三者区别</strong>：FastDFS 自建运维高、OSS 上云免运维弹性强、ES 专攻检索分析；按"自建/上云/检索"分层选型。</li>
+    <li><strong>OSS vs FastDFS 六维</strong>：运维（免运维 vs 极高）、可靠性（12 个 9 vs 副本）、扩展（弹性 vs 手动）、速度（CDN vs 内网）、功能（丰富 vs 基础）、计费（按量 vs 一次性）。</li>
+    <li><strong>信贷组合</strong>：OSS 存合同证件（保险箱）+ ES 建客户索引和风控平台（毫秒检索+聚合+ELK）+ MySQL/OceanBase 存交易数据；合规强制本地化才备选 FastDFS。</li>
+  </ol>
+
+  <h2>十二、怎么练才记得住</h2>
+  <p class="tldr">主动回忆四法，别反复通读。</p>
+  <ol>
+    <li>每次只看一个主题，遮住表格，先自己说出"定位 → 组件 → 场景"，再对照。</li>
+    <li>用"信贷选型/OSS vs FastDFS/ES 为什么快"三道题各讲 30 秒；卡住时只回看对应小节。</li>
+    <li>隔天再讲一遍，换成自己的业务例子；能解释"ES 的 Index 不是 MySQL 的索引"才算会。</li>
+    <li>复习时轮流画"三者定位总图"和"信贷 OSS+ES+MySQL 组合图"；能默写出 OSS 三要素和 ES 四组件才算熟。</li>
+  </ol>
+
+  <script type="text/template" id="mindmap-file-storage">
+# 文件存储：OSS/FastDFS/MinIO与Elasticsearch
+## 三者定位
+### FastDFS/OSS/MinIO 档案室存实体文件
+### Elasticsearch 检索系统只记位置不存原件
+### 职责不同不能互替
+## FastDFS 组件
+### Tracker 调度指路不存文件
+### Storage 干活存储 Group 组内备份
+### Client 直接与 Storage 通信
+## OSS 三要素
+### Bucket 存储空间
+### Object=Key+Data+Meta
+### Endpoint 访问域名
+### 12个9是持久性不是可用性
+## MinIO 特点
+### Golang 实现 HTTP/HTTPS 通信
+### 自带 UI GB/s 读写
+### 云原生 K8s 友好 S3 兼容
+### 私有云自建对象存储
+## Elasticsearch 组件
+### Cluster/Node 主数据协调角色
+### Index 类比库表
+### Document JSON 文档
+### Shard 分片横向扩展 PB级快的核心
+## 三者核心区别
+### FastDFS 自建运维高
+### OSS 上云免运维弹性强
+### ES 专攻检索分析
+### 按自建上云检索分层选型
+## OSS vs FastDFS 六维
+### 运维 免运维 vs 极高
+### 可靠性 12个9 vs 副本
+### 扩展 弹性 vs 手动
+### 速度 CDN vs 内网
+### 功能 丰富 vs 基础
+### 计费 按量 vs 一次性
+## 信贷公司选型
+### 合同文件首选 OSS 保险箱
+### 合规强制本地化备选 FastDFS
+### 风控检索必选 ES
+### 底层交易数据 MySQL/OceanBase
+### 组合拳 OSS+ES+MySQL
+  </script>
+</section>

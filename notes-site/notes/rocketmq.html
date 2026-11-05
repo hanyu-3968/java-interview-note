@@ -1,0 +1,198 @@
+<section class="note" data-note-id="rocketmq" data-note-title="RocketMQ架构与金融级可靠性">
+
+  <p class="tldr">NameServer 轻量路由 + CommitLog 顺序写 + 事务消息保金融级可靠。</p>
+
+  <h2>一、核心组件</h2>
+  <p class="tldr">NameServer 路由，Broker 存储，Producer 写，Consumer 读。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>组件</th><th>职责</th><th>关键点</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>NameServer</mark></td><td>轻量级路由中心</td><td>对等集群，节点间无数据同步；Broker 心跳（30s）注册，超时（120s）剔除</td></tr>
+      <tr><td><mark>Broker</mark></td><td>消息存储与转发的核心</td><td>主从架构，Master 负责读写，Slave 备份；通过 CommitLog 顺序写入消息</td></tr>
+      <tr><td><mark>Producer</mark></td><td>消息生产者</td><td>从 NameServer 获取路由后与 Master 长连接；支持同步、异步、单向三种发送</td></tr>
+      <tr><td><mark>Consumer</mark></td><td>消息消费者</td><td>从 NameServer 获取路由后与 Broker 长连接拉取消息；支持推（Push）和拉（Pull）</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：RocketMQ 的 NameServer 是对等集群，节点间不数据同步（与 ZK 不同）；Broker 30s 心跳注册，NameServer 120s 超时剔除。这是 RocketMQ 比 Kafka 轻量的原因——不依赖 ZK 的强一致。</span></p>
+
+  <h2>二、核心工作流程</h2>
+  <p class="tldr">Broker 注册 → 获取路由 → 发送 → 存储 → 消费。</p>
+  <ol>
+    <li><mark>Broker 启动注册</mark>：向所有 NameServer 节点注册自己的信息（IP、端口、Topic 等）。</li>
+    <li><mark>获取路由</mark>：Producer/Consumer 从 NameServer 拉取最新 Broker 路由信息并缓存到本地。</li>
+    <li><mark>Producer 发送消息</mark>：根据路由与目标 Broker 的 Master 节点建立长连接，发送消息。</li>
+    <li><mark>Broker 存储消息</mark>：Master 收到消息后顺序写入 CommitLog 文件，并同步给 Slave 节点。</li>
+    <li><mark>Consumer 消费消息</mark>：根据路由与 Broker 的 Master 或 Slave 建立长连接，拉取消息消费。</li>
+  </ol>
+
+  <h2>三、如何保证消息不丢失</h2>
+  <p class="tldr">生产端同步发送+事务消息，Broker 同步刷盘+同步复制，消费端手动 ACK。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>端</th><th>风险点</th><th>解决方案</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><mark>生产者端</mark></td>
+        <td>网络抖动导致发送失败</td>
+        <td>同步发送（阻塞等待确认，返回 SEND_OK 才成功）+ 失败重试（<code>producer.setRetryTimesWhenSendFailed(3)</code>）+ 事务消息（支付/订单等核心场景）</td>
+      </tr>
+      <tr>
+        <td><mark>Broker 端</mark></td>
+        <td>内存数据断电丢失</td>
+        <td>同步刷盘（<code>flushDiskType=SYNC_FLUSH</code>）+ 同步复制（<code>brokerRole=SYNC_MASTER</code>，Master 等 Slave 同步完才确认）</td>
+      </tr>
+      <tr>
+        <td><mark>消费者端</mark></td>
+        <td>先提交 Offset 再处理业务，业务失败 → 丢失</td>
+        <td>手动 ACK（关闭自动提交，业务成功后返回 <code>CONSUME_SUCCESS</code>）+ 失败重试（<code>RECONSUME_LATER</code>，默认重试 16 次后进死信队列）+ 幂等性处理</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>生产环境黄金组合：<mark>SYNC_MASTER + SYNC_FLUSH</mark>，实现消息零丢失。</p>
+  <p><span class="supplement">补充：同步刷盘和同步复制是两个维度。同步刷盘防 Broker 宕机断电（单机），同步复制防 Master 宕机（集群）。两者都开才是金融级零丢失。</span></p>
+
+  <h2>四、事务消息机制</h2>
+  <p class="tldr">两阶段提交 + 事务回查，最终一致性。</p>
+  <p>核心设计：<mark>两阶段提交（2PC）+ 事务补偿（回查）</mark>，通过异步解耦避免传统 XA 事务锁资源、性能差的问题。</p>
+  <ol>
+    <li>生产者向 RocketMQ 发送一条<mark>半消息</mark>，Broker 收到后回复 ACK，标记消息为暂不能投递。</li>
+    <li>生产者得到 ACK 后执行<mark>本地事务</mark>。</li>
+    <li>本地事务执行后向 Broker 发送<mark>二次确认</mark>（提交或回滚）；收到提交，Broker 将半消息标记为可投递。</li>
+    <li><mark>事务回查机制</mark>：如果生产者执行完本地事务还没来得及发送二次确认就崩溃，Broker 通过定时任务主动扫描长时间处于半事务状态的消息；开发者需在生产者端实现回查逻辑（查数据库状态），根据结果返回提交或回滚。</li>
+  </ol>
+  <p><span class="supplement">补充：事务消息不是"消息发送和本地事务同时成功"。它是先发半消息（不投递）→ 执行本地事务 → 二次确认投递；如果二次确认丢失，Broker 回查补确认。本质是"最终一致性"，不是强一致。</span></p>
+
+  <h2>五、如何保证消息顺序</h2>
+  <p class="tldr">分区有序：同 Key 进同队列 + 串行消费。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>端</th><th>保证顺序的方式</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>生产者端</mark></td><td>通过 MessageQueueSelector 将相同业务 Key（如订单号）的消息路由到同一个 MessageQueue</td></tr>
+      <tr><td><mark>Broker 端</mark></td><td>将消息按顺序存入选定的 MessageQueue，不进行任何重排，只保证存储顺序与发送顺序一致</td></tr>
+      <tr><td><mark>消费者端</mark></td><td>通过 MessageListenerOrderly 对同一队列进行串行消费</td></tr>
+    </tbody>
+  </table>
+  <p><mark>全局顺序</mark>：将队列数设为 1，但会极大影响性能，一般不推荐。</p>
+
+  <h2>六、RocketMQ 与 Kafka 的 Topic 区别</h2>
+  <p class="tldr">Kafka Partition 独立日志，RocketMQ 合并写 CommitLog。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>Kafka</th><th>RocketMQ</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Topic 存储</td><td>Topic 直接拆分为 Partition，每个 Partition 是独立物理日志文件</td><td>Topic 是纯逻辑概念，所有 Queue 的消息合并写入同一个全局 CommitLog</td></tr>
+      <tr><td>读写方式</td><td>读写直接操作 Partition</td><td>通过 ConsumeQueue 索引区分 Topic 和 Queue</td></tr>
+      <tr><td>优势</td><td>简单直接</td><td>顺序写入 CommitLog，极大提升单机吞吐量（避免随机写多个文件）</td></tr>
+    </tbody>
+  </table>
+
+  <h2>七、RocketMQ 与 Kafka 优缺点对比</h2>
+  <p class="tldr">Kafka 吞吐量+生态，RocketMQ 功能+金融级可靠。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>对比维度</th><th>Kafka 的优点</th><th>RocketMQ 的优点</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>吞吐量与性能</td><td>吞吐量极高，单机可达百万级 TPS</td><td>吞吐量也很高，通常为十万级 TPS</td></tr>
+      <tr><td>消息与功能</td><td>功能相对精简，专注于核心消息传输</td><td>功能非常丰富，原生支持事务消息、严格顺序消息、死信队列、消息重试和定时消息</td></tr>
+      <tr><td>可靠性与一致性</td><td>多副本保证高可用，但数据一致性不如 RocketMQ 严格</td><td><mark>金融级可靠性</mark>，同步双写 + Raft 协议，消息丢失概率极低</td></tr>
+      <tr><td>运维与生态</td><td>生态强大，与 Flink/Spark 无缝集成；原生不带管理控制台</td><td>自带功能完善的管理控制台；国内（阿里生态）应用广泛</td></tr>
+    </tbody>
+  </table>
+  <p>选型结论：日志收集/大数据/极致吞吐量 + 对丢失/重复不敏感 → <mark>Kafka</mark>；订单/交易/支付/库存 + 顺序/一致性/可靠性严苛 → <mark>RocketMQ</mark>。</p>
+
+  <h2>八、RocketMQ 为什么性能高</h2>
+  <p class="tldr">顺序写 + 零拷贝 + 索引分离三大支柱。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>支柱</th><th>原理</th><th>效果</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>顺序写</mark></td><td>消息全部顺序追加到 CommitLog 文件</td><td>磁盘顺序写的性能非常接近内存随机写，大大减少 IO 开销</td></tr>
+      <tr><td><mark>零拷贝</mark></td><td>使用 mmap + write 的 transferTo 方法，数据从 PageCache 直接发送到 Socket 缓冲区</td><td>避免内核态到用户态的数据拷贝，显著降低 CPU 占用</td></tr>
+      <tr><td><mark>索引与数据分离</mark></td><td>ConsumeQueue 存储轻量索引（仅 20 字节/条），消费者先读索引定位物理偏移，再读 CommitLog</td><td>大多数索引常驻内存，只有真实消息才触发磁盘 IO</td></tr>
+    </tbody>
+  </table>
+
+  <h2>九、死信队列与消息堆积处理</h2>
+  <p class="tldr">失败重试耗尽进死信，堆积先扩容再排查。</p>
+  <p><mark>死信队列</mark>：消费失败且重试次数达到上限 → 死信队列。流程：初次消费失败 → 进入重试队列 → 重复重试次数耗尽 → 死信队列。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>堆积可能原因</th><th>排查方法</th><th>解决方案</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>消费者能力不足</td><td>看消费者机器 CPU/内存/网络 IO 是否跑满；看消费 TPS 是否远低于生产 TPS</td><td>增加消费者实例或优化消费代码性能</td></tr>
+      <tr><td>下游依赖变慢</td><td>消费者调用的数据库、API 接口响应时间（RT）突然升高</td><td>优化下游接口性能；增加缓存；同步改异步</td></tr>
+      <tr><td>某条消息处理极慢</td><td>查看消费日志，是否有某条消息处理时间远超平均水平</td><td>优化这条消息的处理逻辑，或路由到专门的重试队列</td></tr>
+      <tr><td>消费者被阻塞</td><td>消费者线程池满、死锁或频繁 Full GC</td><td>分析堆栈（jstack），找出阻塞点，修复代码或增加线程池大小</td></tr>
+      <tr><td>生产者发送过快</td><td>业务高峰期（如大促）流量暴增</td><td>正常的流量削峰场景，消费者能力可动态扩容即良性积压</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充（线上实用技能）：堆积时如何在不重启服务的情况下临时跳过"卡住"的坏消息？利用 RocketMQ 的 Skip 死信机制（或重置消费点位），将消费者消费点位（Offset）手动向前移动 1 位，跳过那条一直处理失败的消息，让它进入死信队列（DLQ），等业务高峰期过了再从死信队列捞出来人工补处理。</span></p>
+
+  <h2>十、定时消息（注意版本差异）</h2>
+  <p class="tldr">4.x 固定 18 级，5.0 任意时间戳。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>版本</th><th>支持方式</th><th>代码</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>RocketMQ 4.x</td><td>只支持 18 个固定级别（1s/5s/10s/30s...）</td><td><code>message.setDelayTimeLevel(3)</code></td></tr>
+      <tr><td><mark>RocketMQ 5.0</mark></td><td>支持任意时间延迟</td><td><code>messageBuilder.setDeliveryTimestamp(System.currentTimeMillis() + 10 * 60 * 1000)</code></td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充（保命认知）：RocketMQ 和 Kafka 在异常情况下都会产生重复消息。RocketMQ 只是概率比 Kafka 的 Rebalance 触发得低，但绝对不是"不会重复"。业务端做幂等（唯一业务 ID + Redis 或 DB 唯一键）是必须的，绝对不能依赖 MQ 来保证不重复。</span></p>
+
+  <h2>十一、面试串联话术</h2>
+  <p class="tldr">架构→可靠性→事务→选型一气呵成。</p>
+  <blockquote>
+    <p>因为我们做的是金融核心交易（退款/权益/发票），对数据一致性要求极高。选 RocketMQ 而不是 Kafka，核心就看中两点：</p>
+    <p>同步刷盘 + 同步复制：宁愿性能低一点（十万级 TPS 对我们足够），也要保证 Broker 宕机零丢消息。</p>
+    <p>事务消息：在处理"会员退款并撤销权益"时，我先发半消息，本地扣款成功后再 Commit，如果本地扣款失败就 Rollback。这保证了我的业务库和 MQ 里的下游通知是绝对一致的，彻底杜绝了"钱退了但权益没收回"的资损风险。</p>
+  </blockquote>
+
+  <script type="text/template" id="mindmap-rocketmq">
+# RocketMQ
+## 核心组件
+### NameServer轻量路由
+### Broker主从CommitLog
+### Producer同步异步单向
+### Consumer推拉两种模式
+## 消息不丢失三端
+### 生产端同步发送+事务消息
+### Broker同步刷盘+同步复制
+### 消费端手动ACK+幂等
+### 黄金组合SYNC_MASTER+SYNC_FLUSH
+## 事务消息机制
+### 半消息暂不投递
+### 执行本地事务
+### 二次确认提交回滚
+### 事务回查补确认
+## 消息顺序性
+### 分区有序
+### MessageQueueSelector按Key选队列
+### MessageListenerOrderly串行消费
+## 与Kafka区别
+### Kafka Partition独立日志
+### RocketMQ合并写CommitLog
+### ConsumeQueue索引区分
+## 性能三大支柱
+### 顺序写接近内存
+### 零拷贝mmap+write
+### 索引分离ConsumeQueue 20字节
+## 死信队列与堆积
+### 失败重试耗尽进死信
+### 堆积先扩容再排查
+### 重置Offset跳过坏消息
+## 定时消息版本差异
+### 4.x固定18级
+### 5.0任意时间戳
+  </script>
+</section>

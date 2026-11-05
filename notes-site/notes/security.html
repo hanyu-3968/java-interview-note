@@ -1,0 +1,246 @@
+<section class="note" data-note-id="security" data-note-title="安全：加密算法、防火墙与DDoS防御">
+
+  <p class="tldr">对称快非对称慢，HTTPS 结合两者，防火墙三功能，DDoS 靠高防兜底。</p>
+
+  <h2>一、常用加密算法：对称、非对称、摘要三分天下</h2>
+  <p class="tldr">对称一把钥匙快，非对称两把钥匙慢，摘要不可逆。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>算法</th><th>类型</th><th>密钥长度</th><th>安全性</th><th>速度</th><th>现状</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><mark>DES</mark></td>
+        <td>对称</td>
+        <td>56 位</td>
+        <td>已被破解</td>
+        <td>快</td>
+        <td>已淘汰</td>
+        <td>老式挂锁，钥匙太短能暴力撬</td>
+      </tr>
+      <tr>
+        <td><mark>3DES</mark></td>
+        <td>对称</td>
+        <td>168 位（3×56）</td>
+        <td>较高</td>
+        <td>慢</td>
+        <td>逐步淘汰</td>
+        <td>三道挂锁叠一起，安全但费劲</td>
+      </tr>
+      <tr>
+        <td><mark>AES</mark></td>
+        <td>对称</td>
+        <td>128/192/256 位</td>
+        <td>高</td>
+        <td>快</td>
+        <td>主流</td>
+        <td>新式电子锁，又快又牢</td>
+      </tr>
+      <tr>
+        <td><mark>SM4</mark></td>
+        <td>对称</td>
+        <td>128 位</td>
+        <td>高</td>
+        <td>快</td>
+        <td>国密标准</td>
+        <td>国产电子锁，自主可控</td>
+      </tr>
+      <tr>
+        <td><mark>RSA</mark></td>
+        <td>非对称</td>
+        <td>1024/2048 位</td>
+        <td>高</td>
+        <td>慢</td>
+        <td>主流</td>
+        <td>信箱：公钥投信，私钥取信</td>
+      </tr>
+      <tr>
+        <td><mark>MD5</mark></td>
+        <td>摘要</td>
+        <td>无密钥</td>
+        <td>已不推荐</td>
+        <td>极快</td>
+        <td>仅做校验</td>
+        <td>指纹机：压一下出定长指纹</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：MD5 不是"加密算法"，是摘要算法——有损压缩、不可逆，不能解密还原原文。说"MD5 加密密码"是口语化错误，准确说法是"MD5 摘要存密码"（且应加盐）。</span></p>
+
+  <h3>对称 vs 非对称</h3>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>对称加密</th><th>非对称加密</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>密钥数量</td><td>1 把（加解密共用）</td><td>2 把（公钥加密、私钥解密）</td></tr>
+      <tr><td>速度</td><td>快（适合大数据量）</td><td>慢（比对称慢 100~1000 倍）</td></tr>
+      <tr><td>密钥分发</td><td>难（如何安全把钥匙给对方？）</td><td>易（公钥可公开，私钥自己留）</td></tr>
+      <tr><td>典型算法</td><td>AES、DES、SM4</td><td>RSA、ECC、SM2</td></tr>
+      <tr><td>适用场景</td><td>数据加密</td><td>密钥协商、数字签名</td></tr>
+    </tbody>
+  </table>
+  <p>速记：对称快但分发难，非对称慢但分发易——所以 HTTPS 让非对称"送钥匙"，让对称"锁数据"。</p>
+  <p><span class="supplement">补充：易混点——"公钥加密、私钥解密"用于保密通信；"私钥签名、公钥验签"用于身份认证。同一对密钥，用法相反，别搞反。</span></p>
+
+  <h2>二、HTTPS 如何结合对称+非对称</h2>
+  <p class="tldr">非对称协商密钥，对称加密数据，兼顾安全与性能。</p>
+  <p>HTTPS = HTTP + TLS。核心思路：<mark>用非对称加密协商出对称密钥，之后全用对称加密传数据</mark>——既解决密钥分发，又保证传输速度。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>步骤</th><th>动作</th><th>用什么</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td>客户端发起连接，带上自己支持的加密套件</td><td>—</td></tr>
+      <tr><td>2</td><td>服务端返回选定的加密套件 + 证书（含公钥）</td><td>非对称（RSA/ECDHE）</td></tr>
+      <tr><td>3</td><td>客户端验证证书（CA 签名、域名、有效期）</td><td>数字签名</td></tr>
+      <tr><td>4</td><td>客户端生成随机数，用服务端公钥加密发回</td><td>非对称</td></tr>
+      <tr><td>5</td><td>双方用该随机数算出对称会话密钥</td><td>—</td></tr>
+      <tr><td>6</td><td>之后所有数据用对称密钥加密传输</td><td>对称（AES）</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：非对称加密只在握手阶段用一次（协商密钥），握手完成后全部走对称加密。如果全程用 RSA 加密数据，性能会崩——这是 HTTPS 设计的精髓。现代 TLS 1.3 用 ECDHE 做密钥协商（前向安全：即使私钥泄露，历史流量也无法解密），RSA 只用于签名验证。</span></p>
+
+  <h2>三、加密算法选型建议</h2>
+  <p class="tldr">数据加密选 AES/SM4，密钥协商选 RSA/SM2，密码存 bcrypt。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>场景</th><th>推荐算法</th><th>原因</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>大数据量加密（接口/存储）</td><td><mark>AES-256 / SM4</mark></td><td>对称快、安全足够</td></tr>
+      <tr><td>密钥协商、数字签名</td><td><mark>RSA-2048 / SM2</mark></td><td>非对称解决分发</td></tr>
+      <tr><td>密码存储</td><td><mark>bcrypt / Argon2</mark>（加盐）</td><td>慢哈希防彩虹表，MD5/SHA 已不推荐</td></tr>
+      <tr><td>完整性校验</td><td>SHA-256 / HMAC</td><td>MD5 有碰撞，仅做非安全校验可用</td></tr>
+      <tr><td>国密合规场景</td><td>SM2 + SM3 + SM4</td><td>金融/政务强制要求</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：易混点——"加密"和"哈希"不是一回事。加密可逆（能解密），哈希不可逆（不能还原）。密码要存哈希（不可逆），不能存加密（能被解出来）。速记：数据加密选 AES/SM4，密钥协商选 RSA/SM2，密码存储选 bcrypt，完整性校验选 SHA-256。</span></p>
+
+  <h2>四、防火墙基本原理及功能</h2>
+  <p class="tldr">访问控制 + 数据包检查 + NAT 地址转换，三件事。</p>
+  <p>防火墙是网络边界的"门卫"，<mark>检查进出网络的每个数据包</mark>，按规则放行或拦截。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>功能</th><th>作用</th><th>典型配置</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><mark>访问控制</mark></td>
+        <td>只允许特定 IP/端口访问</td>
+        <td>放行 80/443，拦截其他</td>
+        <td>门卫查白名单，不在名单不让进</td>
+      </tr>
+      <tr>
+        <td><mark>数据包检查</mark></td>
+        <td>检测病毒、木马、攻击特征</td>
+        <td>匹配特征库拦截恶意包</td>
+        <td>安检机：包里有违禁品就扣下</td>
+      </tr>
+      <tr>
+        <td><mark>地址转换（NAT）</mark></td>
+        <td>内网私有 IP ↔ 公网 IP</td>
+        <td>多台内网共用一个公网 IP 出网</td>
+        <td>前台代收快递：对外只露前台地址</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：易混点——NAT 不只是"省公网 IP"，更重要的是隐藏内网真实地址，外部只能看到公网出口 IP，无法直接访问内网服务器，相当于一层天然防护。防火墙分网络层（包过滤，看 IP/端口）和应用层（WAF，看 HTTP 内容防 SQL 注入/XSS）。</span></p>
+
+  <h2>五、DDoS 攻击原理与防御</h2>
+  <p class="tldr">耗尽资源让服务不可用，SYN 洪水打半连接，靠高防+CDN+限频兜底。</p>
+  <p>DDoS（分布式拒绝服务）不偷数据、不破密码，只干一件事——<mark>用海量请求耗尽系统资源，让正常用户用不了服务</mark>。难缠在于攻击流量和正常流量难区分。</p>
+
+  <h3>SYN 洪水攻击（最经典）</h3>
+  <table class="cmp">
+    <thead>
+      <tr><th>步骤</th><th>正常连接</th><th>SYN 洪水攻击</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td>客户端发 SYN</td><td>攻击者发 SYN（伪造源 IP）</td></tr>
+      <tr><td>2</td><td>服务端回 SYN-ACK，等客户端 ACK</td><td>服务端回 SYN-ACK，等一个永远不来的 ACK</td></tr>
+      <tr><td>3</td><td>客户端回 ACK，连接建立</td><td><mark>半连接队列</mark>被占满，正常用户无法建连</td></tr>
+      <tr><td>4</td><td>数据传输</td><td>服务资源耗尽，服务不可用</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：易混点——SYN 洪水打的是半连接队列（服务端发了 SYN-ACK 还没收到 ACK 的连接），不是带宽。所以防御重点在"半连接管理"，不是单纯加带宽。</span></p>
+
+  <h3>防御措施</h3>
+  <table class="cmp">
+    <thead>
+      <tr><th>措施</th><th>作用</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>高防 IP / 清洗设备</mark></td><td>流量先过清洗中心，过滤攻击流量再回源</td><td>门口设安检门，可疑人员先筛掉</td></tr>
+      <tr><td><mark>CDN 分散流量</mark></td><td>内容分发到多节点，单点被打不影响全局</td><td>多开几个分店，砸一家还有其他家</td></tr>
+      <tr><td><mark>防火墙限频</mark></td><td>限制单 IP 连接速率/并发数</td><td>一个人一分钟只能进一次</td></tr>
+      <tr><td><mark>SYN Cookie</mark></td><td>不分配资源就响应 SYN，ACK 回来才建连</td><td>先发"预约号"，确认了才安排座位</td></tr>
+      <tr><td><mark>监控+应急响应</mark></td><td>实时监控流量异常，触发应急预案</td><td>装监控+保安巡逻，出事马上响应</td></tr>
+    </tbody>
+  </table>
+  <p>速记：DDoS 防御四件套——高防清洗（过滤）、CDN 分散（多节点）、限频限连（卡单 IP）、监控应急（早发现早处理）。最关键是监控和应急响应，别等被打瘫了才发现。</p>
+  <p><span class="supplement">补充：易混点——DDoS 是"耗资源"，DoS 是单点攻击。DDoS 难防就难在"分布式"——攻击源成千上万，封 IP 封不过来，必须靠清洗设备和 CDN 这种"基础设施级"防御。</span></p>
+
+  <h2>六、高频场景题</h2>
+  <p class="tldr">接口被刷看监控，MD5 存密码不安全，HTTPS 不全用非对称。</p>
+  <blockquote>
+    <p><strong>"接口被刷爆，服务挂了，怎么判断是不是 DDoS？"</strong>先看监控——流量是否在短时间内暴涨数倍、来源 IP 是否极度分散（成千上万不同 IP）、半连接数是否飙升。如果三者同时出现，基本就是 DDoS。再看是带宽打满（流量型）还是资源耗尽（SYN 洪水型）：带宽打满看出口流量，资源耗尽看 <code>netstat -an | grep SYN_RECV</code> 半连接数。</p>
+    <p><strong>"为什么 MD5 存密码不安全？该怎么存？"</strong>MD5 的问题不是"能被解密"（它不可逆），而是太快 + 有彩虹表——攻击者拿到 MD5 值后，可以用预计算的彩虹表反查出常见密码。正确做法是用 bcrypt / Argon2 这类慢哈希算法 + 加盐（每个用户随机盐），让暴力破解成本高到不划算。</p>
+    <p><strong>"HTTPS 既然非对称加密安全，为什么不全用非对称？"</strong>非对称加密（RSA）比对称加密慢 100~1000 倍，全用非对称传数据性能会崩。所以 HTTPS 只在握手阶段用非对称协商出对称密钥，之后全用对称加密（AES）传数据——既解决密钥分发问题，又保证传输性能。</p>
+  </blockquote>
+
+  <h2>七、面试回答模板</h2>
+  <p class="tldr">本质是哪一层，机制是什么，实战怎么选。</p>
+  <blockquote>
+    <p><strong>问题本质是……</strong>（先说是哪一层：加密选型、防火墙功能、还是 DDoS 防御）。</p>
+    <p><strong>机制是……</strong>（解释原理 + 关键算法/措施），因为……（为什么这样设计）。</p>
+    <p><strong>实战中我会……</strong>（具体选型/配置/应急手段），例如……（落地场景）。</p>
+    <p>例：问"对称加密和非对称加密怎么选"——本质是密钥分发和性能的权衡；机制上对称一把钥匙快但分发难，非对称两把钥匙慢但分发易；实战中我会用非对称（RSA）做密钥协商，用对称（AES）加密数据，HTTPS 就是这个思路。</p>
+  </blockquote>
+
+  <script type="text/template" id="mindmap-security">
+# 安全：加密算法、防火墙与DDoS防御
+## 常用加密算法
+### 对称加密一把钥匙
+### DES已淘汰56位
+### 3DES三重较慢
+### AES主流快又牢
+### SM4国密自主可控
+### 非对称加密两把钥匙
+### RSA公钥加密私钥解密
+### 摘要算法不可逆
+### MD5有损压缩定长
+## 对称vs非对称
+### 对称快分发难
+### 非对称慢分发易
+### 公钥加密私钥解密保密
+### 私钥签名公钥验签认证
+## HTTPS握手
+### 非对称协商对称密钥
+### 客户端发加密套件
+### 服务端返证书公钥
+### 验证CA签名
+### 公钥加密随机数
+### 算出对称会话密钥
+### 之后全用AES加密
+## 加密算法选型
+### 数据加密选AES/SM4
+### 密钥协商选RSA/SM2
+### 密码存储选bcrypt加盐
+### 完整性校验选SHA-256
+### 国密合规SM2/SM3/SM4
+## 防火墙三功能
+### 访问控制白名单
+### 数据包检查防病毒
+### NAT地址转换藏内网
+## DDoS攻击与防御
+### 耗尽资源服务不可用
+### SYN洪水打半连接
+### 伪造源IP不回ACK
+### 高防IP清洗设备
+### CDN分散流量
+### 防火墙限频限连
+### SYN Cookie不预分配
+### 监控加应急响应
+  </script>
+</section>

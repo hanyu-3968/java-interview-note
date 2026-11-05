@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Java 面试笔记 · Markdown 阅读</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --text:#222; --muted:#888;
+    --accent:#3b82f6; --code-bg:#f0f3f7; --code-text:#c7254e;
+    --border:#e3e6eb; --th-bg:#f0f3f7;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    line-height:1.75;font-size:16px}
+  .wrap{max-width:820px;margin:0 auto;padding:16px}
+  .tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;position:sticky;
+    top:0;background:var(--bg);padding:8px 0;z-index:5;max-height:140px;overflow:auto}
+  .tabs button{padding:8px 12px;border:1px solid #ddd;border-radius:8px;background:var(--card);
+    font-size:13px;cursor:pointer;min-height:36px;white-space:nowrap}
+  .tabs button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .panel{display:none;background:var(--card);border-radius:12px;padding:24px 28px;
+    box-shadow:0 1px 4px rgba(0,0,0,.06)}
+  .panel.active{display:block}
+  .note-title{font-size:22px;font-weight:700;margin:0 0 4px;color:#1a1a1a}
+  .note-cat{display:inline-block;font-size:12px;color:#fff;background:var(--accent);
+    padding:2px 10px;border-radius:10px;margin-bottom:16px}
+  /* Markdown 渲染样式 */
+  .md-body h1{font-size:22px;margin:20px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--border);color:#1a1a1a}
+  .md-body h2{font-size:19px;margin:24px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--border);color:#222}
+  .md-body h3{font-size:16px;margin:16px 0 6px;color:#333}
+  .md-body h4{font-size:15px;margin:14px 0 6px;color:#444}
+  .md-body p{margin:10px 0}
+  .md-body ul,.md-body ol{margin:10px 0;padding-left:24px}
+  .md-body li{margin:4px 0}
+  .md-body strong{font-weight:700;color:#1a1a1a}
+  .md-body em{font-style:italic;color:#555}
+  .md-body code{background:var(--code-bg);padding:1px 6px;border-radius:4px;font-size:13px;
+    color:var(--code-text);font-family:Consolas,"Courier New",monospace}
+  .md-body pre{background:#1e1e2e;color:#e6e6e6;padding:14px 16px;border-radius:8px;overflow:auto;margin:12px 0}
+  .md-body pre code{background:none;color:inherit;padding:0;font-size:13px}
+  .md-body blockquote{margin:12px 0;padding:10px 16px;background:#f7f9fc;
+    border-left:4px solid var(--accent);border-radius:0 8px 8px 0;color:#444}
+  .md-body blockquote p{margin:6px 0}
+  .md-body table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px;display:block;overflow-x:auto}
+  .md-body th,.md-body td{border:1px solid var(--border);padding:8px 12px;text-align:left;vertical-align:top}
+  .md-body th{background:var(--th-bg);font-weight:600}
+  .md-body hr{border:none;border-top:1px solid var(--border);margin:20px 0}
+  .md-body a{color:var(--accent);text-decoration:none}
+  .md-body img{max-width:100%;height:auto;border-radius:8px}
+  /* Mermaid 流程图容器 */
+  .md-body .mermaid{margin:16px 0;text-align:center;background:#fafbfc;
+    border:1px solid var(--border);border-radius:8px;padding:12px;overflow:auto}
+  .md-body .mermaid svg{max-width:100%;height:auto}
+  .hint{color:var(--muted);font-size:13px;margin:6px 2px 14px}
+  .loading{color:var(--muted);text-align:center;padding:40px 0;font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hint">Java 面试笔记 · 共 34 篇 · 点击上方标签切换 · 流程图用 Mermaid 渲染</div>
+  <div class="tabs" id="tabs"></div>
+  <div id="panels"></div>
+</div>
+
+<script src="lib/marked.min.js"></script>
+<script src="lib/mermaid.min.js"></script>
+<script>
+  // 31 篇笔记元数据（id + 显示名 + 分类）
+  const NOTES = [
+    {id:'jvm-tools',name:'JVM工具',cat:'JVM'},
+    {id:'jvm-gc',name:'JVM垃圾回收',cat:'JVM'},
+    {id:'jvm-tuning',name:'JVM调优',cat:'JVM'},
+    {id:'jvm-interview',name:'JVM面试题',cat:'JVM'},
+    {id:'kafka',name:'Kafka',cat:'消息队列'},
+    {id:'rocketmq',name:'RocketMQ',cat:'消息队列'},
+    {id:'jvm-classloader',name:'JVM类加载',cat:'JVM'},
+    {id:'spring',name:'Spring',cat:'Spring'},
+    {id:'concurrent',name:'并发编程',cat:'Java并发'},
+    {id:'collections',name:'集合',cat:'Java基础'},
+    {id:'java-basics',name:'Java基础',cat:'Java基础'},
+    {id:'thread-pool',name:'线程池',cat:'Java并发'},
+    {id:'springboot',name:'SpringBoot',cat:'Spring'},
+    {id:'mysql-index',name:'MySQL索引',cat:'数据库'},
+    {id:'lock-mechanism',name:'锁机制',cat:'Java并发'},
+    {id:'redis',name:'Redis',cat:'中间件'},
+    {id:'threadlocal-cas',name:'ThreadLocal/CAS',cat:'Java并发'},
+    {id:'security',name:'安全',cat:'安全'},
+    {id:'linux',name:'Linux',cat:'运维'},
+    {id:'mybatis',name:'MyBatis',cat:'框架'},
+    {id:'oceanbase',name:'OceanBase',cat:'数据库'},
+    {id:'file-storage',name:'文件存储',cat:'中间件'},
+    {id:'mongodb',name:'MongoDB',cat:'数据库'},
+    {id:'spring-cloud',name:'SpringCloud',cat:'Spring'},
+    {id:'cs-fundamentals',name:'计算机基础',cat:'计算机基础'},
+    {id:'biz-pitfalls',name:'业务开发错误',cat:'实战'},
+    {id:'network',name:'网络传输',cat:'网络'},
+    {id:'mysql',name:'MySQL',cat:'数据库'},
+    {id:'architecture',name:'架构设计',cat:'架构'},
+    {id:'cloud-native',name:'云原生',cat:'云原生'},
+    {id:'zookeeper',name:'ZooKeeper',cat:'中间件'},
+    {id:'demo-design-patterns',name:'设计模式与AOP代理',cat:'项目Demo'},
+    {id:'demo-framework-handwrite',name:'框架手写与规则引擎',cat:'项目Demo'},
+    {id:'demo-concurrent-crypto',name:'并发与加密工具',cat:'项目Demo'}
+  ];
+
+  // marked 配置
+  if(window.marked){
+    marked.setOptions({ breaks:false, gfm:true });
+  }
+  // mermaid 初始化
+  if(window.mermaid){
+    mermaid.initialize({ startOnLoad:false, theme:'default', securityLevel:'loose', flowchart:{ useMaxWidth:true } });
+  }
+
+  // 缓存已加载的 md 文本
+  const mdCache = {};
+  let mermaidCounter = 0;
+
+  async function loadMd(id){
+    if(mdCache[id]) return mdCache[id];
+    const res = await fetch('notes/'+id+'.md');
+    const text = await res.text();
+    mdCache[id] = text;
+    return text;
+  }
+
+  // 把 mermaid 代码块替换成占位 div，渲染后填回
+  function renderMarkdown(mdText, panelEl){
+    // 先把 ```mermaid 块提取出来，用占位符替换，避免 marked 把里面内容当代码渲染
+    const mermaidBlocks = [];
+    const placeholder = mdText.replace(/```mermaid\r?\n([\s\S]*?)```/g, (m, code) => {
+      mermaidBlocks.push(code.trim());
+      return '@@MERMAID_' + (mermaidBlocks.length - 1) + '@@';
+    });
+
+    // 用 marked 渲染
+    let html = window.marked ? marked.parse(placeholder) : '<pre>' + escapeHtml(placeholder) + '</pre>';
+
+    // 把占位符替换成 mermaid 容器
+    html = html.replace(/@@MERMAID_(\d+)@@/g, (m, idx) => {
+      return '<div class="mermaid" id="mm-' + panelEl.id + '-' + idx + '">' + mermaidBlocks[parseInt(idx)] + '</div>';
+    });
+
+    panelEl.innerHTML = html;
+
+    // 渲染 mermaid 图
+    if(window.mermaid){
+      const mermaidDivs = panelEl.querySelectorAll('.mermaid');
+      mermaidDivs.forEach(div => {
+        const code = div.textContent;
+        const renderId = 'mm-svg-' + (mermaidCounter++);
+        try {
+          mermaid.render(renderId, code).then(({svg}) => {
+            div.innerHTML = svg;
+          }).catch(e => {
+            div.innerHTML = '<div style="color:#999;font-size:13px;padding:8px">流程图渲染失败：' + e.message + '</div>';
+          });
+        } catch(e){
+          div.innerHTML = '<div style="color:#999;font-size:13px;padding:8px">流程图渲染失败：' + e.message + '</div>';
+        }
+      });
+    }
+  }
+
+  function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  // 构建 tab 和 panel
+  const tabsEl = document.getElementById('tabs');
+  const panelsEl = document.getElementById('panels');
+  NOTES.forEach((n, i) => {
+    const btn = document.createElement('button');
+    btn.textContent = n.name;
+    btn.dataset.idx = i;
+    if(i === 0) btn.classList.add('active');
+    btn.addEventListener('click', () => switchTo(i));
+    tabsEl.appendChild(btn);
+
+    const panel = document.createElement('div');
+    panel.className = 'panel' + (i === 0 ? ' active' : '');
+    panel.id = 'panel-' + n.id;
+    panel.innerHTML = '<div class="loading">加载中…</div>';
+    panelsEl.appendChild(panel);
+  });
+
+  let currentIdx = -1;
+  async function switchTo(idx){
+    if(idx === currentIdx) return;
+    currentIdx = idx;
+    // 切换 tab active
+    document.querySelectorAll('.tabs button').forEach((b,i) => {
+      b.classList.toggle('active', i === idx);
+    });
+    // 切换 panel
+    document.querySelectorAll('.panel').forEach((p,i) => {
+      p.classList.toggle('active', i === idx);
+    });
+    // 加载 md
+    const n = NOTES[idx];
+    const panel = document.getElementById('panel-' + n.id);
+    if(!mdCache[n.id]){
+      panel.innerHTML = '<div class="loading">加载中…</div>';
+      try {
+        const md = await loadMd(n.id);
+        // 加一个标题头
+        const header = '<div class="note-title">' + n.name + '</div>' +
+                       '<span class="note-cat">' + n.cat + '</span>';
+        const bodyDiv = document.createElement('div');
+        bodyDiv.className = 'md-body';
+        panel.innerHTML = header;
+        panel.appendChild(bodyDiv);
+        renderMarkdown(md, bodyDiv);
+      } catch(e){
+        panel.innerHTML = '<div class="loading">加载失败：' + e.message + '</div>';
+      }
+    }
+    // 滚动到顶部
+    window.scrollTo(0, 0);
+  }
+
+  // 默认加载第一篇
+  switchTo(0);
+</script>
+</body>
+</html>

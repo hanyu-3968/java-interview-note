@@ -1,0 +1,232 @@
+<section class="note" data-note-id="mysql" data-note-title="MySQL核心：InnoDB、B+树、MVCC与2PC">
+  <p class="tldr">引擎·索引·日志·MVCC·2PC·执行·范式七条线</p>
+
+  <h2>一、InnoDB vs MyISAM：怎么选存储引擎</h2>
+  <p class="tldr">事务行锁 InnoDB，MyISAM 只读快</p>
+  <p>两大存储引擎选型看业务：<mark>InnoDB</mark> 支持事务行锁适合高并发写，<mark>MyISAM</mark> 只读快适合历史归档。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>InnoDB</th><th>MyISAM</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>事务</td><td>支持</td><td>不支持</td></tr>
+      <tr><td>锁粒度</td><td><mark>行级锁</mark></td><td>表级锁</td></tr>
+      <tr><td>聚簇索引</td><td>主键索引存整行</td><td>索引存数据指针</td></tr>
+      <tr><td><code>COUNT(*)</code></td><td>全表扫描</td><td>直接返回计数器</td></tr>
+      <tr><td>适用场景</td><td>高并发写、需要事务</td><td>读多写少、历史归档</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：InnoDB 的 <code>COUNT(*)</code> 慢不是缺陷——MVCC 下不同事务看到的行数不同，没法维护全局计数器；MyISAM 没事务没 MVCC 才能直接返回计数器。</span></p>
+
+  <h2>二、B+树索引：聚簇索引 vs 二级索引</h2>
+  <p class="tldr">聚簇存整行，二级存主键要回表</p>
+  <p><mark>B+树</mark> 多路平衡树，所有叶子在同一层，非叶子存键值加指针，叶子存数据。3 层可存约 2000 万行，磁盘友好每节点一页。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>聚簇索引</th><th>二级索引（非聚簇）</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>叶子节点</td><td><mark>完整行数据</mark></td><td>主键值</td></tr>
+      <tr><td>物理存储</td><td>按主键顺序组织</td><td>索引与数据分开</td></tr>
+      <tr><td>查询路径</td><td>主键查询直达</td><td>先查二级拿主键再<mark>回表</mark></td></tr>
+      <tr><td>数量限制</td><td>一张表只能一个</td><td>可以有多个</td></tr>
+      <tr><td>优势场景</td><td>主键查询、范围查询、返回多列</td><td>覆盖索引、频繁插入非自增主键</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：回表不是必须的——查询列全在二级索引里（覆盖索引）时直接返回免回表。InnoDB 无显式主键时选第一个不包含 NULL 的唯一索引作聚簇索引，再没有则自动生成隐式 ROW_ID，所以建表最好显式定义自增主键避免页分裂。</span></p>
+
+  <h2>三、Redo Log 与 Undo Log：持久性与一致性</h2>
+  <p class="tldr">Redo 保持久重做，Undo 保回滚+MVCC</p>
+  <p>事务日志两件套：<mark>Redo Log</mark> 物理日志保证持久性，<mark>Undo Log</mark> 逻辑日志保证原子性和 MVCC。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>Redo Log</th><th>Undo Log</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>日志类型</td><td>物理日志（页做了什么修改）</td><td>逻辑日志（修改前的旧值）</td></tr>
+      <tr><td>存储位置</td><td>redo log file</td><td>回滚段 Rollback Segment</td></tr>
+      <tr><td>核心作用</td><td>崩溃后重做，保证已提交不丢</td><td>事务回滚 + 为 MVCC 提供旧版本</td></tr>
+      <tr><td>刷盘策略</td><td><code>innodb_flush_log_at_trx_commit</code> 每秒刷或每次提交刷</td><td>随事务产生</td></tr>
+      <tr><td>一致性目标</td><td>持久性（durability）</td><td>原子性 + MVCC</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：Redo Log ≠ Binlog。Redo 是 InnoDB 引擎层物理日志（循环写、crash-safe），Binlog 是 Server 层逻辑日志（追加写、主从复制），两者通过 2PC 保证一致。Undo 不只管回滚，还承担 MVCC 旧版本链。</span></p>
+
+  <h2>四、MVCC 与四级隔离级别</h2>
+  <p class="tldr">RU 脏·RC 新快照·RR 复用防幻读·SR 串行</p>
+  <p><mark>MVCC</mark> 通过 ReadView 快照实现并发读不阻塞写。四级隔离级别对应不同快照策略。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>隔离级别</th><th>快照机制</th><th>脏读</th><th>不可重复读</th><th>幻读</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>读未提交 RU</td><td>不用，直接读最新</td><td>有</td><td>有</td><td>有</td></tr>
+      <tr><td>读已提交 RC</td><td>每次 <code>SELECT</code> 生成新 ReadView</td><td>无</td><td>有</td><td>有</td></tr>
+      <tr><td>可重复读 RR</td><td>事务内复用同一 ReadView</td><td>无</td><td>无</td><td><mark>间隙锁</mark>解决</td></tr>
+      <tr><td>串行化 SR</td><td>不用快照，加锁串行</td><td>无</td><td>无</td><td>无</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：不可重复读是同一条数据内容变了（别人修改提交），幻读是行数变了（别人插入/删除）。RR 靠间隙锁（Gap Lock）锁住索引范围空隙阻止插入来防幻读，RC 没有间隙锁所以仍有幻读。</span></p>
+
+  <h2>五、二阶段提交 2PC 与 MySQL 内部 XA</h2>
+  <p class="tldr">先准备写双日志记 XID，崩了对账</p>
+  <p>分布式 2PC 有阻塞，<mark>MySQL 内部 2PC</mark> 用 XID 关联 binlog 与 redo 保证一致。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>分布式 2PC</th><th>3PC 改进</th><th>MySQL 内部 XA</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>阶段</td><td>Prepare + Commit</td><td>CanCommit + PreCommit + DoCommit</td><td>Prepare + Commit</td></tr>
+      <tr><td>Prepare</td><td>冻结资源、锁定</td><td>加询问阶段 + 超时</td><td>InnoDB 写 Redo 标 PREPARED 记 XID</td></tr>
+      <tr><td>Commit</td><td>全 OK 提交，任一失败回滚</td><td>等不到指令超时自动提交</td><td>Server 写 Binlog 带 XID 刷盘，通知 InnoDB 提交</td></tr>
+      <tr><td>缺点</td><td>同步阻塞、单点故障</td><td>仍可能不一致</td><td>崩溃后对账恢复</td></tr>
+      <tr><td>崩溃恢复</td><td>协调者崩了全卡死</td><td>超时自动提交</td><td>扫 Redo 找 PREPARED，去 Binlog 找 XID，有则提交无则回滚</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：MySQL 内部 2PC ≠ 分布式 2PC。前者是 InnoDB Redo 与 Server Binlog 之间的一致性（同库内），后者是跨多个资源管理器的一致性（有协调者单点）。3PC 加超时但仍可能不一致，生产用得少。</span></p>
+
+  <h2>六、MySQL 8.0 关键新特性（对比 5.7）</h2>
+  <p class="tldr">隐藏降序函数索引·窗口函数·事务字典</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>特性</th><th>作用</th><th>5.7 对比</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>隐藏索引</mark></td><td>可临时禁用索引测试效果，避免删了重建</td><td>无</td></tr>
+      <tr><td>降序索引</td><td><code>ORDER BY DESC</code> 直接走索引倒序</td><td>仅语法支持无优化</td></tr>
+      <tr><td>函数索引</td><td>索引表达式如 <code>UPPER(name)</code>，加速计算字段</td><td>无</td></tr>
+      <tr><td>事务型数据字典</td><td>系统表用 InnoDB，原子 DDL，无 <code>.frm</code></td><td>有 <code>.frm</code></td></tr>
+      <tr><td>窗口函数</td><td><code>ROW_NUMBER</code>/<code>RANK</code> 简化分组统计</td><td>无</td></tr>
+      <tr><td>认证方式</td><td>默认 <code>caching_sha2_password</code></td><td>默认 <code>mysql_native_password</code></td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：升级 8.0 三要点——测试所有 SQL（GROUP BY 和窗口函数行为变了）、认证方式默认变了老客户端可能连不上、评估执行计划变化。新项目直接上 8.0，JSON/文档存储/GIS 都更强。</span></p>
+
+  <h2>七、SQL 执行流程：连分优执存</h2>
+  <p class="tldr">连接器→分析器→优化器→执行器→存储引擎</p>
+  <p>一条 SQL 走五步，日志三宝 <mark>undo/redo/binlog</mark> 协作保证回滚、持久、复制。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>阶段</th><th>职责</th><th>关键点</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>连接器</td><td>身份认证、连接管理</td><td>长连接内存占用注意</td></tr>
+      <tr><td>分析器</td><td>词法分析、语法分析</td><td>解析成解析树</td></tr>
+      <tr><td>优化器</td><td>选择最优执行计划</td><td>可用 <code>FORCE INDEX</code> 纠正选错</td></tr>
+      <tr><td>执行器</td><td>调用存储引擎接口操作 B+树</td><td>Buffer Pool 没有则触发磁盘 IO</td></tr>
+      <tr><td>存储引擎</td><td>真正读写数据</td><td>InnoDB 操作 B+树</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：MySQL 8.0 移除了查询缓存（Query Cache）——命中率太低（表一更新缓存全失效）。别在面试里说"先查缓存"，那是老版本。分页优化用 <code>WHERE id &gt; ? LIMIT ?</code> 替代大 <code>OFFSET</code>。</span></p>
+
+  <h2>八、数据库范式：1NF 到 5NF</h2>
+  <p class="tldr">1NF 列不可分·2NF 全依赖·3NF 无传递</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>范式</th><th>要求</th><th>反例</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1NF</td><td>列不可分</td><td>电话列存两个号码</td></tr>
+      <tr><td>2NF</td><td>非主键列完全依赖整个主键</td><td>联合主键（订单ID,商品ID）中商品名只依赖商品ID</td></tr>
+      <tr><td>3NF</td><td>非主键列不依赖其他非主键列</td><td>订单表有客户ID又有客户姓名（姓名依赖客户ID）</td></tr>
+      <tr><td>4NF</td><td>消除多值依赖</td><td>课程表同时多教师多教材，拆两张表</td></tr>
+      <tr><td>5NF</td><td>处理连接依赖</td><td>拆到不能再拆，极少使用</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：范式不是越高越好——3NF 通常够用，过度范式化会导致多表 JOIN 性能下降。实际业务常做适度反范式（冗余几列）换取查询性能。</span></p>
+
+  <h2>九、索引优化：设计原则与失效场景</h2>
+  <p class="tldr">等值左范围右覆盖索引，左模糊函数类型错都失效</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>原则/场景</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>等值列放最左</td><td>等值条件列放在联合索引最左</td></tr>
+      <tr><td>范围列放右边</td><td>范围条件列放在等值列之后</td></tr>
+      <tr><td><mark>覆盖索引</mark></td><td>索引包含查询所需全部列，免回表</td></tr>
+      <tr><td>左模糊失效</td><td><code>LIKE '%abc'</code> 走不了索引</td></tr>
+      <tr><td>函数操作失效</td><td><code>WHERE UPPER(name)='JOHN'</code> 走不了</td></tr>
+      <tr><td>隐式类型转换</td><td><code>WHERE phone=123</code>（phone 是 varchar）走不了</td></tr>
+      <tr><td>违反最左前缀</td><td>跳过索引第一列，索引失效</td></tr>
+      <tr><td>范围后列失效</td><td><code>WHERE age&gt;20 AND name='张三'</code> 只有 age 走索引</td></tr>
+      <tr><td>不等号/OR</td><td><code>NOT IN</code>、OR 两侧没都有索引则失效</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：<code>LIKE 'abc%'</code> 能走索引（前缀确定），<code>LIKE '%abc'</code> 不能（左模糊无起点）。OR 不是一定失效——两侧列都有索引时走索引合并，任一侧没索引才退化为全表扫描。</span></p>
+
+  <h2>高频场景题</h2>
+  <blockquote>
+    <p><strong>"查 7 天内 status=APPLYING 的数据按 id 倒序，怎么优化索引？"</strong> 数据特征：7 天 100 万条，APPLYING 只有 100 条。推荐 <code>INDEX idx_status_created_at(status, created_at)</code>：status 等值过滤后只剩 100 条，即使有 filesort 排序开销也极小。高区分度且等值过滤的列放最左。</p>
+  </blockquote>
+  <blockquote>
+    <p><strong>"InnoDB 聚簇索引和二级索引有什么区别？"</strong> 聚簇叶子存完整行数据，表按主键顺序组织，一张表只能一个；二级叶子存主键值，查询通常先查二级拿主键再回表，多一次 IO。覆盖索引可免回表。</p>
+  </blockquote>
+  <blockquote>
+    <p><strong>"RR 级别下 InnoDB 怎么防止幻读？"</strong> RR 事务内复用同一 ReadView 解决不可重复读，再用间隙锁（Gap Lock）锁住索引范围空隙阻止插入，从而防幻读。RC 没有间隙锁所以仍有幻读。</p>
+  </blockquote>
+
+  <h2>面试回答模板</h2>
+  <blockquote>
+    <p>问题本质是：MySQL 的一致性靠"Redo/Undo 日志 + MVCC 快照 + 2PC 对账"三层保证，核心矛盾是"高并发下既要性能又要正确"。</p>
+    <p>机制是：Redo Log 物理日志保持久性，Undo Log 逻辑日志保回滚和 MVCC 旧版本；MVCC 用 ReadView 在 RC 每次新建、RR 事务内复用，配合间隙锁防幻读；2PC 用 XID 关联 binlog 与 redo，崩溃后对账保证主从不丢数据。</p>
+    <p>实战中我会：建表显式定义自增主键避免页分裂，索引按"等值左范围右覆盖索引"设计，慢查询用 <code>FORCE INDEX</code> 纠正优化器选错，分页用 <code>WHERE id &gt; ? LIMIT ?</code> 替代大 <code>OFFSET</code>。</p>
+  </blockquote>
+
+  <h2>最后复习：闭眼回忆 8 句</h2>
+  <ol>
+    <li>InnoDB 要事务行锁，MyISAM 只读快 count；<code>COUNT(*)</code> InnoDB 全扫是 MVCC 的锅不是缺陷。</li>
+    <li>B+树聚簇索引存整行主键查极快，二级索引存主键要回表，3 层可存 2000 万行。</li>
+    <li>覆盖索引（查询列全在索引里）免回表；InnoDB 无显式主键选唯一索引或隐式 <code>ROW_ID</code>。</li>
+    <li>Redo 物理日志保持久重做，Undo 逻辑日志保回滚和 MVCC 旧版本，刷盘看 <code>innodb_flush_log_at_trx_commit</code>。</li>
+    <li>MVCC 四级隔离：RU 脏读、RC 每次新快照、RR 复用快照+间隙锁防幻读、SR 全锁串行。</li>
+    <li>不可重复读是同条数据内容变，幻读是行数变；RR 靠间隙锁（Gap Lock）防幻读。</li>
+    <li>2PC 先 Prepare 写双日志记 XID，Commit 写 binlog 带 XID；崩了重启对账，binlog 有就提交没有就回滚。</li>
+    <li>索引优化：等值左范围右覆盖索引少回表，左模糊/函数/类型错/违反最左前缀/OR 缺索引都失效。</li>
+  </ol>
+
+  <script type="text/template" id="mindmap-mysql">
+# MySQL核心：InnoDB、B+树、MVCC与2PC
+## 存储引擎
+### InnoDB 事务行锁高并发写
+### MyISAM 只读快历史归档
+### COUNT(*) 全扫 vs 计数器
+## B+树索引
+### 聚簇索引 存整行 主键查极快
+### 二级索引 存主键 要回表
+### 覆盖索引 免回表
+### 3 层存 2000 万行
+## 事务日志
+### Redo Log 物理日志 保持久重做
+### Undo Log 逻辑日志 保回滚+MVCC
+### innodb_flush_log_at_trx_commit 刷盘
+## MVCC 隔离级别
+### RU 未提交 脏读
+### RC 每次新快照
+### RR 复用快照 间隙锁防幻读
+### SR 全锁串行
+## 2PC 与 XA
+### 分布式 2PC Prepare+Commit 有阻塞
+### 3PC 加超时 仍可能不一致
+### MySQL 内部 XID 对账 binlog 与 redo
+### 崩溃恢复 binlog 有就提交
+## MySQL 8.0 新特性
+### 隐藏索引 降序索引 函数索引
+### 窗口函数 事务型数据字典
+### 认证默认 caching_sha2_password
+## SQL 执行流程
+### 连分优执存 五步走
+### 日志三宝 undo 回滚 redo 重做 binlog 复制
+### 8.0 砍了查询缓存
+## 范式设计
+### 1NF 列不可分
+### 2NF 全依赖主键
+### 3NF 无传递依赖
+### 4NF 拆多值 5NF 极少用
+## 索引优化
+### 等值左 范围右 覆盖索引
+### 左模糊 函数 类型错 失效
+### 违反最左前缀 失效
+### OR 两侧都有索引才走
+  </script>
+</section>

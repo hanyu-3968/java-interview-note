@@ -1,0 +1,154 @@
+<section class="note" data-note-id="mongodb" data-note-title="MongoDB：文档型NoSQL与ES对比">
+  <p class="tldr">文档型 NoSQL·BSON·B+树·vs MySQL/ES</p>
+
+  <h2>一、NoSQL 是什么：四类与适用场景</h2>
+  <p class="tldr">文档·键值·列族·图，海量高并发多变用它</p>
+  <p><mark>NoSQL</mark> 不强制固定表结构，支持灵活数据模型，核心优势是高可扩展、高并发读写、灵活数据结构。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>NoSQL 类型</th><th>数据模型</th><th>典型代表</th><th>适用场景</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>文档型</mark></td><td>键值对文档（BSON/JSON）</td><td>MongoDB</td><td>结构多变、快速迭代</td></tr>
+      <tr><td>键值型</td><td>简单 Key-Value</td><td>Redis</td><td>高并发缓存、会话</td></tr>
+      <tr><td>列族型</td><td>按列族存储</td><td>HBase、Cassandra</td><td>海量数据宽表写入</td></tr>
+      <tr><td>图型</td><td>节点与关系</td><td>Neo4j</td><td>社交关系、推荐路径</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：NoSQL 是 "Not Only SQL" 不是 "不要 SQL"，很多 NoSQL（含 MongoDB）也支持类 SQL 查询和聚合。适合互联网日志、社交关系、实时推荐、物联网数据等海量高并发多变场景，不适合复杂事务和强一致性场景。</span></p>
+
+  <h2>二、MongoDB 简介与主要特点</h2>
+  <p class="tldr">BSON 存文档，无 Schema 灵活，日志埋点物联网</p>
+  <p><mark>MongoDB</mark> 是文档型 NoSQL 数据库，用 <mark>BSON</mark>（二进制 JSON）存数据，无固定 Schema，一个集合里可以有不同结构的文档。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>是什么</td><td>文档型 NoSQL，用 BSON 存数据，无固定 Schema</td></tr>
+      <tr><td>数据模型</td><td>一个 Collection 里可以有不同结构的 Document</td></tr>
+      <tr><td>优点</td><td>灵活数据模型、高并发读写、水平扩展方便、原生分片、二级索引、聚合管道</td></tr>
+      <tr><td>场景</td><td>日志存储、用户行为埋点、电商商品订单结构多变、物联网数据</td></tr>
+      <tr><td>不适合</td><td>复杂事务、强一致性场景</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：主要特点 5 条——1）面向文档存储操作简单；2）可对任意属性建索引实现更快排序；3）支持丰富查询表达式；4）允许服务端执行脚本；5）支持多种编程语言。"无 Schema" 指"集合级不预定义"，不是"文档级随便乱写"，单个文档内部仍是 JSON 结构。</span></p>
+
+  <h2>三、逻辑结构：DB/Collection/Document 与 MySQL 对比</h2>
+  <p class="tldr">DB 对库·Collection 对表·Document 对行·Field 对列</p>
+  <p>MongoDB 逻辑结构是实例 → Database → <mark>Collection</mark> → <mark>Document</mark>，对应 MySQL 的实例 → 数据库 → 表 → 行。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>MongoDB</th><th>MySQL</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Database</td><td>数据库</td><td>一个实例下多个 Database</td></tr>
+      <tr><td><mark>Collection</mark></td><td>表</td><td>一个 Database 下多个 Collection</td></tr>
+      <tr><td><mark>Document</mark></td><td>行</td><td>用 BSON 表示，Collection 里多个</td></tr>
+      <tr><td>Field</td><td>列</td><td>Document 里的字段</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：核心区别——Collection 不需要预定义表结构，不同 Document 可以有完全不同的字段，非常灵活；MySQL 表必须先 CREATE TABLE 定义列结构，所有行遵循同一 schema。Collection 是"柔性 schema"，表是"刚性 schema"。</span></p>
+
+  <h2>四、索引引擎：B+树 vs ES 倒排索引</h2>
+  <p class="tldr">Mongo B+树点查范围查，ES 倒排索引全文搜</p>
+  <p><mark>MongoDB</mark> 基于 <mark>B+树索引</mark> 擅长单点查询、范围查询和复杂聚合；<mark>ES</mark> 基于倒排索引加 Segment 文件天然擅长全文搜索。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>MongoDB</th><th>ES（Elasticsearch）</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>索引结构</td><td><mark>B+树索引</mark></td><td>倒排索引 + Segment 文件</td></tr>
+      <tr><td>擅长查询</td><td>单点查询、范围查询、复杂聚合</td><td>全文搜索、模糊匹配、相关性排序</td></tr>
+      <tr><td>数据模型</td><td>文档型 NoSQL（BSON）</td><td>文档型搜索（JSON）</td></tr>
+      <tr><td>一致性</td><td>强一致（单文档事务）</td><td>准实时（近实时 NRT）</td></tr>
+      <tr><td>典型场景</td><td>业务数据存储与查询</td><td>日志检索、全文搜索、分析</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：MongoDB 和 ES 都是文档型但定位不同——MongoDB 是"主数据存储"，ES 是"搜索引擎"。生产中常见组合：MongoDB 存主数据，同步到 ES 做搜索，而不是二选一。B+树按字段值排序建树擅长等值和范围查；倒排索引按"词 → 文档列表"建表擅长全文匹配。</span></p>
+
+  <h2>五、分片与聚合管道：水平扩展与复杂分析</h2>
+  <p class="tldr">分片键选高基数均匀字段，聚合管道 stage 串联</p>
+  <p><mark>分片 Sharding</mark> 解决水平扩展，分片键决定数据分布；<mark>聚合管道</mark> 用 stage 串联做复杂分析。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>机制</th><th>解决问题</th><th>关键点</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>分片 Sharding</mark></td><td>单机容量/性能瓶颈，水平扩展</td><td>选分片键决定数据分布到哪个 shard</td></tr>
+      <tr><td>分片键设计</td><td>数据均匀分布、避免热点</td><td>选基数高、写分布均匀、查询常用字段</td></tr>
+      <tr><td><mark>聚合管道</mark></td><td>复杂分组统计与分析</td><td>多 stage 串联：<code>$match</code>→<code>$group</code>→<code>$sort</code></td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：分片键选错会热点——选自增 ID 或时间戳，新数据总落到最后一个 shard 造成写热点；应选基数高、写分布均匀的字段（如 userId 哈希分片）。范围分片适合范围查但易热点，哈希分片分布均匀但不利于范围查。聚合管道是"文档流过多个 stage 逐步变换"，不是 SQL 的 JOIN。</span></p>
+
+  <h2>六、Java 怎么用：Spring Data MongoDB</h2>
+  <p class="tldr">@Document 标实体，Repository 简单，Template 复杂</p>
+  <p>Spring Boot 项目用 <mark>Spring Data MongoDB</mark>，<code>@Document</code> 注解实体类，用 <code>MongoTemplate</code> 或 <code>MongoRepository</code> 操作数据库，和 Spring Data JPA 用法非常类似。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>方式</th><th>特点</th><th>适用场景</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>@Document</mark> 注解</td><td>标注实体类对应哪个 Collection</td><td>所有实体类必加</td></tr>
+      <tr><td><mark>MongoRepository</mark></td><td>接口继承即用，方法名派生查询</td><td>简单 CRUD、方法名查询</td></tr>
+      <tr><td><mark>MongoTemplate</mark></td><td>模板类直接操作，灵活</td><td>复杂查询、聚合管道、动态条件</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：典型用法——实体类加 @Document(collection="user")，字段加 @Id 标主键；Repository 接口继承 MongoRepository&lt;User, String&gt;，方法名如 findByNameAndAge 自动派生查询；复杂聚合用 MongoTemplate.aggregate(pipeline, "user", User.class)。Repository 和 Template 不是二选一，简单 CRUD 用 Repository，复杂聚合用 Template，常同时注入，和 JPA 里 JpaRepository + EntityManager 共存一个道理。</span></p>
+
+  <h2>面试回答模板</h2>
+  <blockquote>
+    <p>问题本质是：MongoDB 是文档型 NoSQL，核心矛盾是"灵活无 Schema 模型 vs 关系型强事务"和"B+树点查 vs ES 倒排全文搜"的选型。</p>
+    <p>机制是：MongoDB 用 BSON 存无 Schema 文档，Collection 不预定义结构，靠 B+树索引擅长点查范围查与聚合，水平扩展靠原生分片（分片键决定数据分布），Java 侧用 Spring Data MongoDB 的 @Document + MongoRepository/MongoTemplate 像 JPA 一样操作。</p>
+    <p>实战中我会：结构多变、海量高并发、强水平扩展场景（日志/埋点/物联网/电商商品）选 MongoDB；强事务多表关联选 MySQL；全文搜索选 ES，常组合 MongoDB 存主数据 + ES 做搜索；分片键选高基数均匀字段避热点。</p>
+  </blockquote>
+
+  <h2>最后复习：闭眼回忆 8 句</h2>
+  <ol>
+    <li>NoSQL 四类：文档 Mongo、键值 Redis、列族 HBase、图 Neo4j；Not Only SQL 不是不要 SQL。</li>
+    <li>NoSQL 适合海量高并发结构多变强水平扩展，不适合复杂事务强一致性。</li>
+    <li>MongoDB 是文档型 NoSQL，用 BSON 二进制 JSON 存数据，无固定 Schema，一个集合文档可不同结构。</li>
+    <li>逻辑结构：Database 对数据库，Collection 对表，Document 对行，Field 对列；Collection 无需预定义 schema。</li>
+    <li>MongoDB 基于 B+树擅长点查范围查复杂聚合，ES 基于倒排索引加 Segment 擅长全文搜索。</li>
+    <li>MongoDB 是主数据存储，ES 是搜索引擎，生产常组合 Mongo 存主数据 + ES 做搜索。</li>
+    <li>分片键选高基数均匀字段避热点，避免自增 ID/时间戳范围分片；聚合管道 stage 串联像流水线不是 JOIN。</li>
+    <li>Spring Data MongoDB：<code>@Document</code> 标实体，<code>MongoRepository</code> 简单 CRUD，<code>MongoTemplate</code> 复杂聚合，和 JPA 一个套路。</li>
+  </ol>
+
+  <script type="text/template" id="mindmap-mongodb">
+# MongoDB：文档型NoSQL与ES对比
+## NoSQL 定位
+### 文档·键值·列族·图四类
+### Not Only SQL 不是不要 SQL
+### 海量高并发多变场景
+### 不适合复杂事务强一致
+## MongoDB 简介
+### 文档型 NoSQL
+### BSON 二进制 JSON
+### 无 Schema 灵活模型
+### 日志埋点物联网电商
+## 逻辑结构
+### Database 对数据库
+### Collection 对表 无需预定义
+### Document 对行 BSON
+### Field 对列
+## 索引引擎
+### B+树索引
+### 点查范围查复杂聚合
+### vs ES 倒排索引
+### ES 全文搜索 Segment
+### Mongo 主存 ES 搜索常组合
+## 分片与聚合
+### 分片 Sharding 水平扩展
+### 分片键高基数均匀避热点
+### 聚合管道 stage 串联
+### 不是 SQL JOIN
+## Java 接入
+### Spring Data MongoDB
+### @Document 标实体
+### MongoRepository 简单 CRUD
+### MongoTemplate 复杂聚合
+### 和 JPA 一个套路
+  </script>
+</section>

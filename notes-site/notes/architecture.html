@@ -1,0 +1,183 @@
+<section class="note" data-note-id="architecture" data-note-title="架构设计：DDD与扩展策略">
+
+  <p class="tldr">DDD 对齐业务边界，充血内聚行为，先垂直后水平扩展。</p>
+
+  <h2>一、DDD 领域驱动设计：实现流程</h2>
+  <p class="tldr">业务分析→模型草图→领域划分→细化设计→代码实现。</p>
+  <p>DDD 的核心是<mark>让代码结构对齐业务结构</mark>，先用通用语言沟通，再划边界、再写代码。五步从模糊到清晰：</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>步骤</th><th>做什么</th><th>关键产出</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>业务分析</td><td>梳理业务流程、角色、用例</td><td>用例图、流程图</td><td>先把"谁干什么"讲清楚</td></tr>
+      <tr><td>领域模型草图</td><td>识别领域对象与关系</td><td>概念草图</td><td>白板上画圈连线</td></tr>
+      <tr><td>领域划分</td><td>按业务边界划分子域</td><td>子域列表</td><td>把大蛋糕切成几块</td></tr>
+      <tr><td>细化设计</td><td>定义聚合根、实体、值对象</td><td>领域模型详图</td><td>给每块蛋糕定主次</td></tr>
+      <tr><td>代码实现</td><td>落地充血模型与分层</td><td>可运行代码</td><td>草图变工程</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：DDD 不是分层架构。分层是技术维度（Controller/Service/Dao），DDD 是业务维度（按领域切分），两者正交——DDD 切横，分层切纵。</span></p>
+
+  <h2>二、DDD 核心概念：领域、子域、限界上下文</h2>
+  <p class="tldr">子域切问题空间，限界上下文定模型边界。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>概念</th><th>定义</th><th>作用</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>领域</mark></td><td>一个业务范围/问题空间</td><td>圈定要解决的业务</td><td>"电商"整个大盘</td></tr>
+      <tr><td><mark>子域</mark></td><td>领域内更小的业务块</td><td>拆分复杂业务</td><td>电商里的"商品、订单、支付"</td></tr>
+      <tr><td><mark>核心域</mark></td><td>最赚钱、最关键的子域</td><td>投入最精锐兵力</td><td>电商的"交易"</td></tr>
+      <tr><td>支撑域</td><td>必要但非核心的子域</td><td>自建或外包均可</td><td>电商的"物流"</td></tr>
+      <tr><td>通用域</td><td>通用基础设施类子域</td><td>直接用现成方案</td><td>电商的"权限、认证"</td></tr>
+      <tr><td><mark>限界上下文</mark></td><td>一个模型适用的明确边界</td><td>防止概念混淆、定义契约</td><td>"商品"在交易是 SKU，在仓储是货位</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：子域是问题空间的划分（业务怎么切），限界上下文是解决方案空间的划分（模型边界在哪）。一个子域通常对应一个限界上下文，但不是绝对一对一。</span></p>
+
+  <h2>三、聚合根、实体、值对象</h2>
+  <p class="tldr">聚合根是门面，实体有身份证，值对象看长相。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>概念</th><th>定义</th><th>有无标识</th><th>一致性职责</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>聚合根</mark></td><td>聚合的入口对象，对外唯一引用点</td><td>有 ID</td><td>维护聚合内强一致性</td><td>订单是根，订单项归它管</td></tr>
+      <tr><td><mark>实体</mark></td><td>有唯一标识、有状态、可变</td><td>有 ID</td><td>聚合内参与一致性</td><td>订单项有 ID，但要通过订单改</td></tr>
+      <tr><td><mark>值对象</mark></td><td>无标识、不可变、用属性判等</td><td>无 ID</td><td>描述特征，无生命周期</td><td>地址、金额、日期</td></tr>
+    </tbody>
+  </table>
+  <p>关键规则：</p>
+  <ul>
+    <li>外部只能持有<mark>聚合根的引用</mark>，不能直接引用内部实体。</li>
+    <li>聚合内修改必须经过聚合根，保证一致性边界。</li>
+    <li>聚合间通过聚合根 ID 引用，不用对象引用。</li>
+    <li>一个事务只改<mark>一个聚合</mark>，跨聚合用领域事件最终一致。</li>
+  </ul>
+  <p><span class="supplement">补充：实体和值对象的最大区别不是"复杂度"，而是有没有身份标识。Address 字段再多，两个相同就视为相等，它是值对象；OrderItem 只有一个数量字段，有 ID 能区分，它就是实体。</span></p>
+
+  <h2>四、充血模型 vs 贫血模型</h2>
+  <p class="tldr">贫血=数据袋+Service大脑，充血=对象自己有大脑。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>贫血模型</th><th>充血模型</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>数据与行为</td><td>对象只有数据（getter/setter），行为在 Service</td><td>对象既有数据又有业务行为</td></tr>
+      <tr><td>业务逻辑位置</td><td>全在 Service 层</td><td>在领域对象内</td></tr>
+      <tr><td>面向对象</td><td>退化成数据结构</td><td>真正的封装</td></tr>
+      <tr><td>可维护性</td><td>Service 越来越胖、难复用</td><td>行为内聚、易测试</td></tr>
+      <tr><td>适用场景</td><td>简单 CRUD、表驱动业务</td><td>复杂业务规则、领域逻辑丰富</td></tr>
+      <tr><td>典型框架</td><td>早期 Spring MVC + MyBatis</td><td>DDD 项目、Spring Data + 领域层</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：充血模型不是把所有逻辑塞进对象。领域逻辑（业务规则、状态变更）放领域对象；应用逻辑（事务编排、调用其他聚合、发事件）仍放 Application Service。充血的是领域层，不是把 Service 砍光。</span></p>
+
+  <h2>五、垂直扩展 vs 水平扩展</h2>
+  <p class="tldr">垂直加硬件到顶，水平加节点无限，先垂直后水平。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>垂直扩展（Scale Up）</th><th>水平扩展（Scale Out）</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>做法</td><td>增强单机硬件：加 CPU 核数、加内存、提磁盘 IOPS、加带宽</td><td>增加更多服务器节点分散负载</td></tr>
+      <tr><td>上限</td><td>有物理上限（单机硬件天花板）</td><td>理论无上限（持续加节点）</td></tr>
+      <tr><td>成本</td><td>越往上越贵（顶级硬件溢价高）</td><td>线性成本，普通机器即可</td></tr>
+      <tr><td>单点风险</td><td>高（单机故障全挂）</td><td>低（节点故障可剔除）</td></tr>
+      <tr><td>改造成本</td><td>几乎零改造</td><td>需要分布式改造（状态、数据分片）</td></tr>
+      <tr><td>典型场景</td><td>数据库单机升级、中间件初期</td><td>Web 服务、微服务、分布式数据库</td></tr>
+    </tbody>
+  </table>
+  <p>水平扩展的典型落地：</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>系统</th><th>水平扩展方式</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>OceanBase</mark></td><td>原生分布式数据库，加节点自动分片扩容</td><td>加机器就自动切数据</td></tr>
+      <tr><td><mark>Redis Cluster</mark></td><td>数据分散到多节点，16384 个槽位管理</td><td>数据按槽位撒到多台</td></tr>
+      <tr><td><mark>Spring Cloud / Dubbo</mark></td><td>应用服务多实例，注册中心 + 负载均衡</td><td>同一个服务起 N 份</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：垂直扩展和水平扩展不是二选一，而是先垂直后水平。单机没到瓶颈先加硬件（便宜、零改造），到顶了再水平扩展。一上来就分布式是过度设计。</span></p>
+
+  <h2>六、架构演进：单体 → 集群 → 微服务 → 云原生</h2>
+  <p class="tldr">每步解一个问题、生一个新问题，匹配业务规模。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>阶段</th><th>形态</th><th>解决的问题</th><th>带来的新问题</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>单体</mark></td><td>一个 war/jar 全包</td><td>简单、好部署、好调试</td><td>单点故障、代码膨胀、扩展难</td><td>一间小作坊全干</td></tr>
+      <tr><td><mark>集群</mark></td><td>单体多实例 + 负载均衡</td><td>解决单点、提升吞吐</td><td>Session 共享、状态同步</td><td>同一家作坊开多家分店</td></tr>
+      <tr><td><mark>微服务</mark></td><td>按业务边界拆分独立服务</td><td>独立部署、独立扩展、技术异构</td><td>分布式事务、链路追踪、运维复杂</td><td>每道工序独立车间</td></tr>
+      <tr><td><mark>云原生</mark></td><td>容器化 + K8s + 服务网格 + 弹性伸缩</td><td>自动扩缩容、资源利用率高、故障自愈</td><td>学习曲线陡、基础设施重</td><td>车间全自动化、按需开关</td></tr>
+    </tbody>
+  </table>
+  <p>演进触发条件：</p>
+  <ul>
+    <li>单体 → 集群：<mark>单机扛不住流量</mark>或<mark>不能停机</mark>。</li>
+    <li>集群 → 微服务：<mark>团队规模变大</mark>、业务模块迭代节奏不一、需要技术异构。</li>
+    <li>微服务 → 云原生：服务数量爆炸、需要弹性伸缩、多环境部署。</li>
+  </ul>
+  <p><span class="supplement">补充：微服务不是拆得越细越好。拆分粒度要匹配团队边界（康威定律）和业务边界（限界上下文）。拆太细会导致服务间调用爆炸、分布式事务遍地、运维成本失控。</span></p>
+
+  <h2>七、高频场景题</h2>
+  <p class="tldr">Service 胖用 DDD 重构，QPS 涨先垂直后水平。</p>
+  <h3>"业务越来越复杂，Service 层几千行，怎么重构？"</h3>
+  <p>诊断：典型<mark>贫血模型</mark>症状——领域逻辑全堆在 Service，对象退化成数据袋。用 DDD 思路重构：先识别聚合根和实体，把业务规则从 Service 搬回领域对象，Service 只做事务编排。</p>
+  <h3>"系统 QPS 涨了 10 倍，单机扛不住，怎么扩？"</h3>
+  <p>诊断：先看瓶颈在哪。CPU/内存瓶颈先<mark>垂直扩展</mark>加硬件（零改造、见效快）；到顶或要抗单点再<mark>水平扩展</mark>。水平扩展前先解决无状态化（Session 外置、本地缓存改分布式），再起多实例 + 负载均衡。</p>
+  <h3>"微服务拆分怎么定边界？拆太细调用爆炸怎么办？"</h3>
+  <p>诊断：用 DDD 的<mark>限界上下文</mark>定边界——一个限界上下文对应一个微服务。拆分粒度匹配团队边界（康威定律），跨服务调用尽量走领域事件异步解耦，避免同步调用链过长。</p>
+
+  <h2>八、面试回答模板</h2>
+  <p class="tldr">本质-机制-实战三句话讲清架构选型。</p>
+  <blockquote>
+    <p>问题本质是：架构选型没有银弹，核心是"匹配业务规模和团队能力"，过度设计和设计不足都是错。</p>
+    <p>机制是：DDD 用领域边界对齐业务，充血模型把行为收回领域对象保证内聚；垂直扩展加硬件到顶，水平扩展加节点无限但需分布式改造；架构从单体到云原生，每一步解决一个核心矛盾。</p>
+    <p>实战中我会：先看业务复杂度决定要不要 DDD，简单 CRUD 用贫血模型够用；扩展先垂直后水平，水平前先无状态化；微服务按限界上下文拆，粒度匹配团队，跨服务用事件解耦。</p>
+  </blockquote>
+
+  <script type="text/template" id="mindmap-architecture">
+# 架构设计DDD与扩展策略
+## DDD实现流程
+### 业务分析梳理流程角色
+### 领域模型草图识别对象
+### 领域划分按边界切子域
+### 细化设计聚合根实体值对象
+### 代码实现充血模型落地
+## DDD核心概念
+### 领域是业务范围
+### 子域切问题空间
+### 核心域最关键
+### 支撑域通用域可外包
+### 限界上下文定模型边界
+## 三级对象
+### 聚合根是入口维护一致性
+### 实体有身份证可变
+### 值对象无标识不可变
+### 外部只引用聚合根
+### 一个事务改一个聚合
+## 充血vs贫血
+### 贫血只有数据行为在Service
+### 充血数据行为都在对象
+### 领域逻辑放对象应用逻辑放Service
+### 简单CRUD用贫血
+### 复杂业务用充血
+## 扩展策略
+### 垂直扩展加硬件有上限
+### 水平扩展加节点无上限
+### 先垂直后水平
+### OceanBase自动分片
+### Redis Cluster槽位管理
+### Spring Cloud多实例
+## 架构演进
+### 单体简单好部署
+### 集群抗单点提吞吐
+### 微服务独立部署扩展
+### 云原生容器弹性伸缩
+### 拆分匹配团队边界
+  </script>
+</section>

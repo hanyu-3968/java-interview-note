@@ -1,0 +1,12 @@
+# 原始 docx 笔记（只本地保留，不传 GitHub；展示用 notes-site/ 里优化后的 md）
+doc/
+
+# 临时文件
+_tmp_*
+_tmp_daily*
+*.tmp
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini

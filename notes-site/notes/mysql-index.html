@@ -1,0 +1,181 @@
+<section class="note" data-note-id="mysql-index" data-note-title="MySQL索引：设计原则与失效场景">
+
+  <p class="tldr">区分度选列，最左前缀匹配，覆盖索引免回表，EXPLAIN 验证。</p>
+
+  <h2>一、索引底层：B+ 树为什么快</h2>
+  <p class="tldr">叶子存数据 + 双向链表，3 层管 2000 万行。</p>
+  <p>InnoDB 的索引是 <mark>B+ 树</mark>：所有数据存在<mark>叶子节点</mark>，非叶子节点只存索引键 + 子节点指针，叶子节点之间用<mark>双向链表</mark>连接。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>特征</th><th>说明</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>多路平衡</td><td>树高通常 3~4 层</td><td>大楼楼层索引，3 层定位到房间</td></tr>
+      <tr><td>叶子存数据</td><td>真正行数据只在叶子</td><td>仓库货架在最底层，楼上只放目录牌</td></tr>
+      <tr><td>叶子链表</td><td>叶子节点双向链表</td><td>字典页码连成一条线，范围翻页快</td></tr>
+      <tr><td>3 层存 2000 万行</td><td>单节点 16KB，约 1000 个键，1000³ ≈ 10 亿</td><td>三级目录管千万行，三次 IO 搞定</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：<mark>聚簇索引</mark>（主键索引，叶子存整行数据）和<mark>二级索引</mark>（非主键索引，叶子存主键值）用途不同。二级索引查到主键后还要去聚簇索引取整行，这就是"回表"。</span></p>
+
+  <h2>二、选择性原则：区分度决定要不要建</h2>
+  <p class="tldr">区分度越高越值得建，低于 0.3 要三思。</p>
+  <p>区分度 = <code>count(distinct col) / count(*)</code>，越接近 1 越适合建索引。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>区分度</th><th>典型列</th><th>是否建索引</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>接近 1</td><td>身份证号、订单号、UUID</td><td>✅ 强烈推荐</td><td>一人一个号，一查就中</td></tr>
+      <tr><td>0.5~0.9</td><td>用户名、手机号</td><td>✅ 推荐</td><td>大多数不重复</td></tr>
+      <tr><td>0.1~0.3</td><td>性别、状态、是否删除</td><td>❌ 不推荐</td><td>全表一半都是男，筛不掉多少</td></tr>
+      <tr><td>接近 0</td><td>布尔标志、固定枚举</td><td>❌ 不建</td><td>翻完索引还得翻大半张表</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：区分度低不是"绝对不能建"，若作为<mark>联合索引的最后一列</mark>配合高区分度列做覆盖，仍可能有用。判断标准是"过滤后还剩多少行"，不是单看列本身。</span></p>
+
+  <h2>三、最左前缀原则：联合索引的匹配规则</h2>
+  <p class="tldr">从左到右连续匹配，遇到范围查询就断。</p>
+  <p>联合索引 <code>(a, b, c)</code> 按 a → b → c 顺序排好，查询必须从最左列开始，不能跳过中间列。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>查询条件</th><th>是否走索引</th><th>原因</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>where a=1</code></td><td>✅ 用到 a</td><td>从最左列开始</td><td>查字典先翻首字母</td></tr>
+      <tr><td><code>where a=1 and b=2</code></td><td>✅ 用到 a,b</td><td>连续匹配</td><td>首字母 + 第二字母</td></tr>
+      <tr><td><code>where a=1 and b=2 and c=3</code></td><td>✅ 全用</td><td>完整匹配</td><td>三级目录全命中</td></tr>
+      <tr><td><code>where b=2</code></td><td>❌ 不走</td><td>跳过 a</td><td>直接翻第二字母，目录失效</td></tr>
+      <tr><td><code>where a=1 and c=3</code></td><td>⚠️ 只用 a</td><td>跳过 b，c 失效</td><td>中间隔一层，c 用不上</td></tr>
+      <tr><td><code>where a=1 and b&gt;2 and c=3</code></td><td>⚠️ 用 a,b</td><td>b 是范围，c 失效</td><td>范围之后目录断了</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：<mark>"最左前缀"指索引列的顺序，不是 WHERE 的书写顺序</mark>。<code>where b=2 and a=1</code> 优化器会自动调整为 a、b 顺序，仍能走索引。但跳过中间列（如 a、c 跳过 b）则无法补齐。</span></p>
+
+  <h2>四、覆盖索引：免回表就是快</h2>
+  <p class="tldr">查询列全在索引里，直接从索引树返回。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>场景</th><th>索引</th><th>是否回表</th><th>性能</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>select * from t where a=1</code></td><td><code>(a)</code></td><td>✅ 回表</td><td>慢：索引查到主键 → 再查聚簇索引</td></tr>
+      <tr><td><code>select a,b from t where a=1</code></td><td><code>(a,b)</code></td><td>❌ 不回表</td><td>快：索引里就有 a、b</td></tr>
+      <tr><td><code>select a,b,c from t where a=1</code></td><td><code>(a,b,c)</code></td><td>❌ 不回表</td><td>快：覆盖索引</td></tr>
+      <tr><td><code>select a,b,c,d from t where a=1</code></td><td><code>(a,b,c)</code></td><td>✅ 回表</td><td>慢：d 不在索引里</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：覆盖索引不是一种"索引类型"，而是"查询恰好被索引覆盖"的<mark>使用状态</mark>。EXPLAIN 里看到 <code>Extra: Using index</code> 就说明走了覆盖索引，不需要回表。</span></p>
+
+  <h2>五、控制索引数量：不是越多越好</h2>
+  <p class="tldr">单表 5~6 个以内，每个都要有高频查询对应。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>影响维度</th><th>说明</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>写入变慢</td><td>insert/update/delete 要同步更新所有索引</td><td>每加一本书要更新 N 个目录</td></tr>
+      <tr><td>占用空间</td><td>每个索引一棵 B+ 树</td><td>目录本身也占书架</td></tr>
+      <tr><td>优化器选择困难</td><td>多个可用索引时选错</td><td>路太多反而迷路</td></tr>
+      <tr><td>单表建议</td><td>5~6 个以内</td><td>一本书 5~6 个目录够用了</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充："单表 5~6 个"是经验值不是硬上限。核心判断是<mark>每个索引都要有高频查询对应</mark>，没人查的索引就是纯负担。建索引前先看慢查询日志，确认这列真的被频繁过滤。</span></p>
+
+  <h2>六、索引失效场景：七大杀手</h2>
+  <p class="tldr">索引列被加工（函数/转换/模糊/运算）就失效。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>失效场景</th><th>错误写法</th><th>正确写法</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>左模糊</td><td><code>like '%abc'</code></td><td><code>like 'abc%'</code></td><td>字典从后往前翻，目录废了</td></tr>
+      <tr><td>函数操作</td><td><code>where year(t)=2024</code></td><td><code>where t between '2024-01-01' and '2024-12-31'</code></td><td>先加工再查，索引认不出</td></tr>
+      <tr><td>隐式类型转换</td><td><code>where phone=13800138000</code>（phone 是 varchar）</td><td><code>where phone='13800138000'</code></td><td>数字对字符串，被转成函数</td></tr>
+      <tr><td>违反最左前缀</td><td>联合索引 <code>(a,b,c)</code> 查 <code>where b=2</code></td><td><code>where a=1 and b=2</code></td><td>跳过最左列，目录失效</td></tr>
+      <tr><td>范围后列失效</td><td><code>where a=1 and b&gt;2 and c=3</code></td><td>把范围列放最后</td><td>范围之后断链</td></tr>
+      <tr><td><code>!=</code> / <code>NOT IN</code></td><td><code>where status != 1</code></td><td>改用 <code>in (2,3,4)</code> 或拆分</td><td>否定条件优化器难走索引</td></tr>
+      <tr><td>OR 两侧未都有索引</td><td><code>where a=1 or b=2</code>（b 无索引）</td><td>给 b 也建索引，或拆成 union</td><td>一边没索引就退化全表扫</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：<mark><code>!=</code> 不是绝对失效</mark>，区分度高时仍可能走索引，但优化器通常判断"过滤后行数仍多"而放弃。<mark><code>OR</code> 也不是绝对失效</mark>，只有当 OR 两侧至少有一列无索引时才退化全表扫；两侧都有索引时走 <code>index_merge</code>。<mark><code>like 'abc%'</code>（右模糊）能走索引</mark>，只有左模糊 <code>%abc</code> 和全模糊 <code>%abc%</code> 才失效。</span></p>
+
+  <h2>七、EXPLAIN 验证：用执行计划说话</h2>
+  <p class="tldr">看 type 不是 ALL、key 不是 NULL、Extra 有 Using index。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>列</th><th>关注点</th><th>好信号</th><th>坏信号</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>type</code></td><td>访问类型</td><td><code>const</code> / <code>eq_ref</code> / <code>ref</code> / <code>range</code></td><td><code>ALL</code>（全表扫）</td></tr>
+      <tr><td><code>key</code></td><td>实际用的索引</td><td>命中预期索引</td><td><code>NULL</code>（没用索引）</td></tr>
+      <tr><td><code>rows</code></td><td>预估扫描行数</td><td>越小越好</td><td>接近全表行数</td></tr>
+      <tr><td><code>Extra</code></td><td>附加信息</td><td><code>Using index</code>（覆盖索引）</td><td><code>Using filesort</code> / <code>Using temporary</code></td></tr>
+    </tbody>
+  </table>
+  <p><mark>type 从好到差排序：</mark><code>const</code> &gt; <code>eq_ref</code> &gt; <code>ref</code> &gt; <code>range</code> &gt; <code>index</code> &gt; <code>ALL</code></p>
+  <p><span class="supplement">补充：<code>type=index</code> 看起来像走索引，其实是<mark>扫描整棵索引树</mark>（比 ALL 稍好但仍是全扫），通常出现在 <code>select count(*)</code> 或查询列全在索引里但无 where 过滤时。真正"用索引定位"是 <code>ref</code>/<code>range</code> 及以上。</span></p>
+
+  <h2>八、高频场景题</h2>
+  <p class="tldr">查询变慢先 EXPLAIN，对照七大失效场景排查。</p>
+  <h3>查询突然变慢，怎么判断是不是索引失效？</h3>
+  <p>先 <code>EXPLAIN</code> 看 <code>type</code> 是否退化成 <code>ALL</code>、<code>key</code> 是否变 <code>NULL</code>，再对照 SQL 检查七大失效场景（左模糊、函数、隐式转换、跳最左、范围后断、否定条件、OR 单边）。</p>
+  <h3>联合索引 (a,b,c)，where a=1 and c=3 走索引吗？</h3>
+  <p>只走 a，c 用不上。因为跳过了 b，B+ 树在 a 之后无法直接定位 c。要么改成 <code>a=1 and b=? and c=3</code>，要么把 c 单独建索引，或调整联合索引顺序为 <code>(a,c,b)</code>。</p>
+  <h3>性别字段要不要建索引？</h3>
+  <p>单独建没意义——区分度太低，过滤后仍剩一半行，优化器宁可全表扫。但如果是联合索引 <code>(status, user_id)</code> 配合高区分度列做覆盖，仍可能有用。判断标准是"过滤后还剩多少行"。</p>
+  <h3>为什么 select * 慢，select 指定列快？</h3>
+  <p><code>select *</code> 必然回表（聚簇索引取整行），而 <code>select</code> 指定列若被索引覆盖则 <code>Using index</code> 免回表。所以高频查询要建覆盖索引，把查询列都包进联合索引。</p>
+
+  <h2>九、面试回答模板</h2>
+  <p class="tldr">本质是查询加速与写入成本的平衡，用 EXPLAIN 验证。</p>
+  <blockquote>
+    <p>问题本质是索引设计要在"查询加速"和"写入维护成本"之间找平衡，不是越多越好，也不是有索引就一定快。</p>
+    <p>机制是 InnoDB 用 B+ 树存索引，3 层可管 2000 万行；联合索引按最左前缀匹配，覆盖索引可免回表；但函数、隐式转换、左模糊等会让索引失效退化为全表扫。</p>
+    <p>实战中我会先按区分度选列、按查询顺序排联合索引、用覆盖索引减少回表、控制单表索引 5~6 个以内，最后用 EXPLAIN 验证 type 不是 ALL、Extra 有 Using index，确保索引真的被用上。</p>
+  </blockquote>
+
+  <script type="text/template" id="mindmap-mysql-index">
+# MySQL索引：设计原则与失效场景
+## 索引底层B+树
+### 叶子节点存数据
+### 叶子双向链表
+### 3层管2000万行
+### 聚簇索引存整行
+### 二级索引存主键需回表
+## 选择性原则
+### 区分度越高越值得建
+### 接近1强烈推荐
+### 低于0.3不单独建
+### 性别状态不建索引
+### 判断过滤后剩多少行
+## 最左前缀原则
+### 从左到右连续匹配
+### 跳过中间列则后续失效
+### 范围查询之后断链
+### 优化器可调整书写顺序
+## 覆盖索引
+### 查询列全在索引里
+### 免回表Using index
+### select指定列更快
+### 联合索引包高频查询列
+## 控制索引数量
+### 单表5到6个以内
+### 写入要维护所有索引树
+### 每个索引要有高频查询对应
+### 冗余索引及时删
+## 索引失效七大杀手
+### 左模糊百分号开头
+### 函数操作加工列
+### 隐式类型转换
+### 违反最左前缀
+### 范围查询后列失效
+### 不等于NOT IN
+### OR单边无索引
+## EXPLAIN验证
+### type不是ALL
+### key不是NULL
+### Extra有Using index
+### type排序const到ALL
+  </script>
+</section>

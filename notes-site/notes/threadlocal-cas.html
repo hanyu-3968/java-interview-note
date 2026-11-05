@@ -1,0 +1,118 @@
+<section class="note" data-note-id="threadlocal-cas" data-note-title="多线程：强软弱虚引用、ThreadLocal与CAS">
+
+  <p class="tldr">四种引用回收时机 + ThreadLocal 内存泄漏 + CAS 与 ABA + 连接池选型。</p>
+
+  <h2>一、强软弱虚四种引用</h2>
+  <p class="tldr">强不回收、软 OOM 前、弱 GC 即、虚只跟踪。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>引用类型</th><th>回收时机</th><th>典型场景</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>强引用（Strong）</td><td><mark>永不回收</mark>，哪怕 OOM 也不动</td><td>普通对象赋值 <code>Object o = new Object()</code></td><td>死忠保镖：人在保镖在</td></tr>
+      <tr><td>软引用（Soft）</td><td><mark>内存不足、OOM 前</mark>回收</td><td>图片缓存、查询结果缓存</td><td>备胎：够就留，紧张就丢</td></tr>
+      <tr><td>弱引用（Weak）</td><td><mark>只要发生 GC</mark>就回收，无论内存是否充足</td><td>ThreadLocalMap key、WeakHashMap key、Guava/Caffeine 弱引用键值</td><td>路人：GC 一来就走</td></tr>
+      <tr><td>虚引用（Phantom）</td><td>最弱，<mark>唯一目的是跟踪 GC</mark></td><td>监控对象生命周期、清理外部资源、自定义内存管理</td><td>侦探：只盯梢不碰对象</td></tr>
+    </tbody>
+  </table>
+  <p><mark>虚引用两个关键点</mark>：<code>get()</code> 永远返回 <code>null</code>（拿不到对象）；对象被回收时会被放入<mark>引用队列</mark>（ReferenceQueue），系统通知你"它没了"。</p>
+  <p><span class="supplement">补充：软引用和弱引用最容易搞混。软引用看内存脸色（内存够就留，不足才回收），弱引用看 GC 脸色（GC 一来必回收，不管内存够不够）。一句话：软引用"留到 OOM 前"，弱引用"GC 即清"。</span></p>
+  <p><mark>速记：</mark>强不回收、软 OOM 前、弱 GC 即、虚只跟踪。软留缓存、弱做映射、虚盯生命周期。</p>
+
+  <h2>二、ThreadLocal 原理与内存泄漏</h2>
+  <p class="tldr">key 弱引用防 key 泄漏，value 强引用仍泄漏，finally 里 remove。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>要点</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>原理</td><td>每个线程持有自己的 <code>ThreadLocalMap</code>，以 <code>ThreadLocal</code> 对象为 Key 存数据</td></tr>
+      <tr><td>线程隔离</td><td>不同线程访问同一 <code>ThreadLocal</code> 拿到各自独立的数据副本</td></tr>
+      <tr><td>应用场景</td><td>同线程跨方法跨类传递上下文（用户身份、TraceId、数据库连接）</td></tr>
+      <tr><td>Entry 的 key</td><td><mark>弱引用</mark>，防止 ThreadLocal 对象本身无法被 GC</td></tr>
+      <tr><td>Entry 的 value</td><td><mark>强引用</mark>，key==null 后 value 仍被 Entry 持有 → 会泄漏</td></tr>
+      <tr><td>清理逻辑</td><td>依赖 <code>set</code>/<code>get</code>/<code>remove</code> 中的清理逻辑，或显式调用 <code>remove()</code></td></tr>
+      <tr><td>唯一彻底解法</td><td><mark>finally 块中调用 remove()</mark></td></tr>
+    </tbody>
+  </table>
+  <p><mark>为什么 key 用弱引用？</mark>为了让 ThreadLocal 对象在没有外部强引用时能被 GC 回收，<mark>防止 key 本身造成内存泄漏</mark>。如果 key 是强引用，线程存活期间 ThreadLocal 永远回收不了。</p>
+  <p><mark>value 会泄漏吗？会。</mark>因为 value 是强引用。当 key==null（弱引用被回收）后，value 仍被 Entry 持有，形成 <code>Thread → ThreadLocalMap → Entry → value</code> 的强引用链，线程不死 value 就不回收。线程池复用场景下尤其严重：线程长期存活，value 不断堆积，导致<mark>内存泄漏</mark>或<mark>数据串扰</mark>（前一个用户的上下文被后一个用户读到）。</p>
+  <p><span class="supplement">补充："key 用弱引用"不等于"ThreadLocal 不会内存泄漏"。弱引用只防住了 key 泄漏，value 泄漏仍存在。唯一能彻底避免的方法是每次用完在 finally 块调用 remove()。很多人误以为用了弱引用就高枕无忧，结果线程池项目里照样 OOM。</span></p>
+  <p><mark>速记：</mark>key 弱引用防 key 泄漏，value 强引用仍泄漏，finally 里 remove() 是唯一解。</p>
+
+  <h2>三、CAS 原理与 ABA 问题</h2>
+  <p class="tldr">JNI→C→cmpxchg 原子指令，ABA 用版本号解决。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>要点</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>全称</td><td>Compare And Swap（比较并交换）</td></tr>
+      <tr><td>实现链路</td><td>Java JNI → C 语言 → <mark>CPU 指令 cmpxchg</mark></td></tr>
+      <tr><td>原子性来源</td><td><mark>CPU 指令级别</mark>原子，非锁实现</td></tr>
+      <tr><td>操作语义</td><td>比较内存值与期望值，相等则更新为新值，不相等则不操作</td></tr>
+      <tr><td>Java API</td><td><code>compareAndSwapxxx</code> 系列（Unsafe）、Atomic* 原子类</td></tr>
+    </tbody>
+  </table>
+  <p><mark>ABA 问题：</mark>CAS 在操作前检查值有没有变化，没变化才更新。但如果值原来是 A，被其他线程改成 B 又改回 A，CAS 检查时发现"值没变"就更新了——<mark>实际却变化过</mark>。对纯数值更新无影响，但对"发生过修改就视为脏"的场景（如栈操作、状态机）会出错。</p>
+  <p><mark>解决 ABA：给值加修改版本号。</mark>每次值变化都更新版本号，CAS 时不仅比值还比版本号。Java 中 <code>AtomicStampedReference</code> 用一个 <code>(对象引用, 整数 stamp)</code> 的 pair 对象解决 ABA——值改一次 stamp 加一，CAS 同时对比引用和 stamp。</p>
+  <p><span class="supplement">补充：ABA 不是"值错了"，而是"值看起来没变但中间变过"。对只关心最终值的场景（计数器）ABA 无害；对关心过程的场景（资源状态、链表节点复用）ABA 有害，必须用版本号。别一提 CAS 就说"必须解决 ABA"，要看场景。</span></p>
+  <p><mark>速记：</mark>CAS = JNI → C → cmpxchg 原子指令；ABA = A→B→A 检测不出，用版本号 AtomicStampedReference 解决。</p>
+
+  <h2>四、数据库连接池性能对比</h2>
+  <p class="tldr">性能 HikariCP 最强，功能 Druid 最全。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>连接池</th><th>定位</th><th>特点</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>HikariCP</td><td><mark>性能最强</mark></td><td>字节码优化、无锁设计、极致轻量</td></tr>
+      <tr><td>Druid</td><td><mark>功能最全</mark></td><td>SQL 拦截、统计全面、扩展性好</td></tr>
+      <tr><td>JDBC（无池）</td><td>基线</td><td>每次新建连接，性能最差</td></tr>
+      <tr><td>DBCP</td><td>老牌</td><td>功能基础，性能一般</td></tr>
+      <tr><td>C3P0（cp30）</td><td>老牌</td><td>性能最弱，已不推荐</td></tr>
+    </tbody>
+  </table>
+  <p><mark>性能排序：</mark><code>hikaricp > druid > jdbc > dbcp > cp30</code>。</p>
+  <p><span class="supplement">补充："性能最强"不等于"必须选"。HikariCP 极致性能但监控弱，Druid 性能略逊但 SQL 拦截、慢查询统计、防 SQL 注入等运维功能全面。互联网高并发业务选 HikariCP 榨干性能；需要强监控和 SQL 治理的传统企业系统选 Druid。</span></p>
+  <p><mark>速记：</mark>性能 HikariCP > Druid > JDBC > DBCP > C3P0；功能 Druid 最全。</p>
+
+  <h2>五、面试串联话术</h2>
+  <p class="tldr">引用→ThreadLocal→CAS→连接池一气呵成。</p>
+  <blockquote>
+    <p>四种引用：强引用永不回收（哪怕 OOM），软引用 OOM 前回收（做缓存），弱引用 GC 即回收（做 ThreadLocalMap key、WeakHashMap key），虚引用最弱只跟踪 GC（get 永远返回 null，回收时入引用队列）。软引用看内存脸色，弱引用看 GC 脸色。</p>
+    <p>ThreadLocal：每线程一个 ThreadLocalMap 以 ThreadLocal 为 key 存独立副本，线程隔离。key 用弱引用防 key 泄漏，但 value 是强引用，key==null 后 value 仍被 Entry 持有，线程池复用下会内存泄漏或数据串扰。唯一解法是 finally 块调用 remove()。</p>
+    <p>CAS：JNI → C → CPU 指令 cmpxchg 原子操作，无锁比较并替换。ABA 问题是 A→B→A 检测不出，用版本号 AtomicStampedReference 解决（值改一次 stamp 加一，CAS 同时对比引用和 stamp）。连接池性能 HikariCP > Druid > JDBC > DBCP > C3P0，HikariCP 性能最强、Druid 功能最全。</p>
+  </blockquote>
+
+  <script type="text/template" id="mindmap-threadlocal-cas">
+# 多线程强软弱虚引用ThreadLocal与CAS
+## 四种引用
+### 强引用永不回收哪怕OOM
+### 软引用OOM前回收做缓存
+### 弱引用GC即回收做映射
+### 虚引用最弱只跟踪GC
+### 软看内存弱看GC
+## ThreadLocal
+### 每线程一个ThreadLocalMap
+### 以ThreadLocal为key存副本
+### 线程隔离跨方法传上下文
+### key弱引用防key泄漏
+### value强引用仍会泄漏
+### finally里remove唯一解
+### 线程池复用会数据串扰
+## CAS原理
+### JNI调C映射cmpxchg指令
+### CPU指令级原子无锁
+### 比较并替换操作语义
+### Atomic系列原子类
+### ABA问题A到B到A检测不出
+### 加版本号AtomicStampedReference
+### 纯计数无害关心过程才解决
+## 数据库连接池
+### HikariCP性能最强
+### Druid功能最全SQL拦截
+### 性能HikariCP大于Druid大于JDBC大于DBCP大于C3P0
+### 高并发选HikariCP强监控选Druid
+  </script>
+</section>

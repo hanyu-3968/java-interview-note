@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-default-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="theme-color" content="#000000">
+<title>知识库 · Notes</title>
+<style>
+  /* ============ 设计令牌：苹果深色质感 ============ */
+  :root{
+    --bg-0:#000000;
+    --bg-1:#0a0a0c;
+    --bg-2:#16161a;
+    --glass:rgba(28,28,32,0.55);
+    --glass-border:rgba(255,255,255,0.10);
+    --glass-border-strong:rgba(255,255,255,0.18);
+    --text:#f5f5f7;
+    --text-soft:#a1a1a6;
+    --text-muted:#6e6e73;
+    --glow-blue:#0a84ff;
+    --glow-purple:#bf5af2;
+    --glow-orange:#ff9f0a;
+    --glow-pink:#ff375f;
+    --glow-green:#30d158;
+    --radius:24px;
+    --radius-lg:32px;
+  }
+  /* ============ 亮色主题（data-theme="light" 时覆盖）============ */
+  [data-theme="light"]{
+    --bg-0:#f5f7fa;
+    --bg-1:#ffffff;
+    --bg-2:#edf0f4;
+    --glass:rgba(255,255,255,0.70);
+    --glass-border:rgba(0,0,0,0.08);
+    --glass-border-strong:rgba(0,0,0,0.15);
+    --text:#1f2937;
+    --text-soft:#4b5563;
+    --text-muted:#9ca3af;
+  }
+  [data-theme="light"] .bg-aurora{opacity:0.5}
+  [data-theme="light"] .bg-aurora::before{background:radial-gradient(circle,#dbeafe 0%,#93c5fd 40%,transparent 70%);}
+  [data-theme="light"] .bg-aurora::after{background:radial-gradient(circle,#ede9fe 0%,#c4b5fd 40%,transparent 70%);}
+  [data-theme="light"] .bg-aurora .blob3{background:radial-gradient(circle,#fef3c7 0%,#fbbf24 40%,transparent 70%);}
+  [data-theme="light"] .hero h1{background:linear-gradient(180deg,#1f2937 0%,#6b7280 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;filter:none;}
+  [data-theme="light"] .hero .eyebrow{background:rgba(255,255,255,0.7);color:var(--text-soft);}
+  [data-theme="light"] .card{box-shadow:0 1px 0 0 rgba(255,255,255,0.8) inset,0 20px 50px -20px rgba(0,0,0,0.15),0 8px 24px -8px rgba(0,0,0,0.08);}
+  [data-theme="light"] .card-meta .arrow{background:rgba(0,0,0,0.04);border-color:var(--glass-border);}
+  [data-theme="light"] .badge-empty{background:rgba(0,0,0,0.04);color:var(--text-muted);border-color:var(--glass-border);}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow-x:hidden}
+  body{
+    background:var(--bg-0);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+    min-height:100vh;
+    position:relative;
+    overflow-x:hidden;
+  }
+
+  /* ============ 背景：多层渐变光晕（苹果质感核心）============ */
+  .bg-aurora{
+    position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;
+  }
+  .bg-aurora::before,.bg-aurora::after{
+    content:"";position:absolute;border-radius:50%;filter:blur(120px);
+    opacity:0.55;will-change:transform;
+  }
+  .bg-aurora::before{
+    width:680px;height:680px;
+    background:radial-gradient(circle,#1e3a8a 0%,#0a84ff 40%,transparent 70%);
+    top:-200px;left:-180px;
+    animation:float1 18s ease-in-out infinite;
+  }
+  .bg-aurora::after{
+    width:720px;height:720px;
+    background:radial-gradient(circle,#581c87 0%,#bf5af2 40%,transparent 70%);
+    bottom:-220px;right:-200px;
+    animation:float2 22s ease-in-out infinite;
+  }
+  .bg-aurora .blob3{
+    position:absolute;width:520px;height:520px;border-radius:50%;filter:blur(110px);
+    background:radial-gradient(circle,#7c2d12 0%,#ff9f0a 40%,transparent 70%);
+    top:40%;left:50%;transform:translate(-50%,-50%);opacity:0.28;
+    animation:float3 26s ease-in-out infinite;
+  }
+  @keyframes float1{
+    0%,100%{transform:translate(0,0) scale(1)}
+    50%{transform:translate(60px,40px) scale(1.08)}
+  }
+  @keyframes float2{
+    0%,100%{transform:translate(0,0) scale(1)}
+    50%{transform:translate(-50px,-30px) scale(1.1)}
+  }
+  @keyframes float3{
+    0%,100%{transform:translate(-50%,-50%) scale(1)}
+    50%{transform:translate(-40%,-60%) scale(1.15)}
+  }
+  /* 噪点纹理（高级感细节）*/
+  .bg-noise{
+    position:fixed;inset:0;z-index:1;pointer-events:none;opacity:0.035;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  }
+
+  /* ============ 主容器 ============ */
+  .stage{
+    position:relative;z-index:2;
+    min-height:100vh;
+    display:flex;flex-direction:column;
+    padding:env(safe-area-inset-top) 24px env(safe-area-inset-bottom);
+  }
+
+  /* ============ 顶部标题区 ============ */
+  .hero{
+    text-align:center;
+    padding:64px 0 48px;
+    animation:fadeUp 0.9s cubic-bezier(0.22,1,0.36,1) both;
+  }
+  .hero .eyebrow{
+    display:inline-flex;align-items:center;gap:8px;
+    font-size:13px;font-weight:500;letter-spacing:0.08em;
+    color:var(--text-soft);
+    padding:6px 14px;border-radius:100px;
+    background:var(--glass);border:1px solid var(--glass-border);
+    backdrop-filter:blur(20px) saturate(180%);
+    -webkit-backdrop-filter:blur(20px) saturate(180%);
+    margin-bottom:24px;
+  }
+  .hero .eyebrow .pulse{
+    width:6px;height:6px;border-radius:50%;background:var(--glow-green);
+    box-shadow:0 0 8px var(--glow-green);
+    animation:pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse{
+    0%,100%{opacity:1;transform:scale(1)}
+    50%{opacity:0.5;transform:scale(0.8)}
+  }
+  .hero h1{
+    font-size:clamp(40px,8vw,72px);
+    font-weight:700;
+    letter-spacing:-0.03em;
+    line-height:1.05;
+    background:linear-gradient(180deg,#ffffff 0%,#a1a1a6 100%);
+    -webkit-background-clip:text;background-clip:text;
+    -webkit-text-fill-color:transparent;
+    /* 发光效果 */
+    filter:drop-shadow(0 0 30px rgba(255,255,255,0.15));
+    margin-bottom:16px;
+  }
+  .hero h1 .accent{
+    background:linear-gradient(135deg,#0a84ff 0%,#bf5af2 50%,#ff375f 100%);
+    -webkit-background-clip:text;background-clip:text;
+    -webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 0 24px rgba(191,90,242,0.45));
+  }
+  .hero .sub{
+    font-size:clamp(15px,2.4vw,18px);
+    color:var(--text-soft);
+    font-weight:400;
+    letter-spacing:0.01em;
+    max-width:520px;margin:0 auto;
+    line-height:1.6;
+  }
+
+  /* ============ 卡片网格 ============ */
+  .cards{
+    flex:1;
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+    gap:20px;
+    max-width:1100px;width:100%;margin:0 auto;
+    padding:8px 0 64px;
+  }
+
+  /* ============ 单张卡片：毛玻璃 + 发光 + 质感图案 ============ */
+  .card{
+    position:relative;
+    border-radius:var(--radius-lg);
+    padding:32px 28px 28px;
+    min-height:320px;
+    cursor:pointer;
+    overflow:hidden;
+    background:var(--glass);
+    border:1px solid var(--glass-border);
+    backdrop-filter:blur(40px) saturate(180%);
+    -webkit-backdrop-filter:blur(40px) saturate(180%);
+    box-shadow:
+      0 1px 0 0 rgba(255,255,255,0.08) inset,
+      0 20px 50px -20px rgba(0,0,0,0.6),
+      0 8px 24px -8px rgba(0,0,0,0.4);
+    transition:transform 0.5s cubic-bezier(0.22,1,0.36,1),
+               box-shadow 0.5s cubic-bezier(0.22,1,0.36,1),
+               border-color 0.4s ease;
+    display:flex;flex-direction:column;
+    text-decoration:none;color:inherit;
+    animation:fadeUp 0.9s cubic-bezier(0.22,1,0.36,1) both;
+  }
+  .card:nth-child(1){animation-delay:0.1s}
+  .card:nth-child(2){animation-delay:0.2s}
+  .card:nth-child(3){animation-delay:0.3s}
+  @keyframes fadeUp{
+    from{opacity:0;transform:translateY(30px)}
+    to{opacity:1;transform:translateY(0)}
+  }
+
+  /* 卡片顶部高光（苹果质感细节）*/
+  .card::before{
+    content:"";position:absolute;inset:0;border-radius:inherit;
+    background:linear-gradient(180deg,rgba(255,255,255,0.06) 0%,transparent 30%);
+    pointer-events:none;
+  }
+  /* 卡片悬浮发光晕 */
+  .card::after{
+    content:"";position:absolute;inset:-1px;border-radius:inherit;
+    background:var(--card-glow,transparent);
+    opacity:0;transition:opacity 0.5s ease;
+    filter:blur(40px);z-index:-1;pointer-events:none;
+  }
+  .card:hover{
+    transform:translateY(-6px) scale(1.01);
+    border-color:var(--glass-border-strong);
+    box-shadow:
+      0 1px 0 0 rgba(255,255,255,0.12) inset,
+      0 30px 70px -20px rgba(0,0,0,0.7),
+      0 12px 32px -8px rgba(0,0,0,0.5);
+  }
+  .card:hover::after{opacity:0.6}
+
+  /* 各卡片主题色 */
+  .card-java{--card-glow:radial-gradient(circle at 50% 0%,rgba(10,132,255,0.5),transparent 70%)}
+  .card-ai{--card-glow:radial-gradient(circle at 50% 0%,rgba(191,90,242,0.5),transparent 70%)}
+  .card-daily{--card-glow:radial-gradient(circle at 50% 0%,rgba(255,159,10,0.5),transparent 70%)}
+
+  /* 卡片图案区（简洁质感图形）*/
+  .card-art{
+    position:relative;
+    height:120px;
+    margin-bottom:24px;
+    display:flex;align-items:center;justify-content:center;
+  }
+  /* Java 卡片：层叠圆环 */
+  .art-java{
+    width:96px;height:96px;position:relative;
+  }
+  .art-java .ring{
+    position:absolute;inset:0;border-radius:50%;
+    border:2px solid rgba(10,132,255,0.5);
+    box-shadow:0 0 20px rgba(10,132,255,0.3);
+  }
+  .art-java .ring:nth-child(2){inset:14px;border-color:rgba(10,132,255,0.7);box-shadow:0 0 16px rgba(10,132,255,0.4)}
+  .art-java .ring:nth-child(3){inset:28px;border-color:rgba(191,90,242,0.6);box-shadow:0 0 14px rgba(191,90,242,0.4)}
+  .art-java .core{
+    position:absolute;inset:42px;border-radius:50%;
+    background:linear-gradient(135deg,#0a84ff,#bf5af2);
+    box-shadow:0 0 24px rgba(191,90,242,0.6);
+  }
+  /* AI 卡片：神经网络节点 */
+  .art-ai{
+    width:120px;height:96px;position:relative;
+  }
+  .art-ai .node{
+    position:absolute;width:10px;height:10px;border-radius:50%;
+    background:rgba(191,90,242,0.9);
+    box-shadow:0 0 12px rgba(191,90,242,0.7);
+  }
+  .art-ai .line{
+    position:absolute;height:1px;
+    background:linear-gradient(90deg,rgba(191,90,242,0.6),rgba(255,55,95,0.4));
+    transform-origin:left center;
+  }
+  /* 每日卡片：日历方块 */
+  .art-daily{
+    width:88px;height:88px;position:relative;
+    border-radius:18px;
+    background:linear-gradient(145deg,rgba(255,159,10,0.15),rgba(255,55,95,0.1));
+    border:1px solid rgba(255,159,10,0.4);
+    box-shadow:0 0 24px rgba(255,159,10,0.25),inset 0 1px 0 rgba(255,255,255,0.1);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    overflow:hidden;
+  }
+  .art-daily::before{
+    content:"";position:absolute;top:0;left:0;right:0;height:18px;
+    background:linear-gradient(135deg,#ff9f0a,#ff375f);
+    box-shadow:0 0 16px rgba(255,159,10,0.5);
+  }
+  .art-daily .d-num{
+    font-size:30px;font-weight:700;color:#fff;
+    margin-top:6px;letter-spacing:-0.02em;
+    filter:drop-shadow(0 0 8px rgba(255,159,10,0.6));
+  }
+  .art-daily .d-label{
+    font-size:10px;color:rgba(255,255,255,0.7);
+    letter-spacing:0.1em;text-transform:uppercase;margin-top:2px;
+  }
+
+  /* 卡片文字区 */
+  .card-body{flex:1;display:flex;flex-direction:column}
+  .card-title{
+    font-size:24px;font-weight:600;letter-spacing:-0.02em;
+    color:var(--text);margin-bottom:8px;
+    filter:drop-shadow(0 0 12px rgba(255,255,255,0.1));
+  }
+  .card-desc{
+    font-size:14px;color:var(--text-soft);line-height:1.6;
+    margin-bottom:20px;flex:1;
+  }
+  .card-meta{
+    display:flex;align-items:center;justify-content:space-between;
+    padding-top:16px;
+    border-top:1px solid var(--glass-border);
+  }
+  .card-meta .stat{
+    font-size:12px;color:var(--text-muted);
+    display:flex;align-items:center;gap:6px;
+  }
+  .card-meta .stat b{
+    color:var(--text-soft);font-weight:600;font-size:13px;
+  }
+  .card-meta .arrow{
+    width:28px;height:28px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(255,255,255,0.06);
+    border:1px solid var(--glass-border);
+    transition:all 0.4s cubic-bezier(0.22,1,0.36,1);
+    color:var(--text-soft);
+  }
+  .card:hover .card-meta .arrow{
+    background:var(--card-accent,rgba(255,255,255,0.12));
+    transform:translateX(4px);
+    color:#fff;
+  }
+  .card-java{--card-accent:rgba(10,132,255,0.3)}
+  .card-ai{--card-accent:rgba(191,90,242,0.3)}
+  .card-daily{--card-accent:rgba(255,159,10,0.3)}
+
+  /* 空状态徽章 */
+  .badge-empty{
+    display:inline-flex;align-items:center;gap:5px;
+    font-size:11px;font-weight:500;
+    padding:3px 9px;border-radius:100px;
+    background:rgba(255,255,255,0.06);
+    border:1px solid var(--glass-border);
+    color:var(--text-muted);
+    margin-left:8px;
+  }
+
+  /* ============ 底部 ============ */
+  .footer{
+    text-align:center;padding:24px 0 32px;
+    font-size:12px;color:var(--text-muted);
+    letter-spacing:0.02em;
+  }
+  .footer .dot{margin:0 8px;opacity:0.4}
+
+  /* ============ 移动端 ============ */
+  @media(max-width:640px){
+    .stage{padding:env(safe-area-inset-top) 16px env(safe-area-inset-bottom)}
+    .hero{padding:40px 0 32px}
+    .cards{gap:16px;padding-bottom:48px}
+    .card{min-height:260px;padding:24px 22px 22px}
+    .card-art{height:96px;margin-bottom:18px}
+    .card-title{font-size:21px}
+  }
+</style>
+</head>
+<body>
+  <!-- 背景光晕 + 噪点 -->
+  <div class="bg-aurora"><div class="blob3"></div></div>
+  <div class="bg-noise"></div>
+
+  <div class="stage">
+    <!-- 顶部标题 -->
+    <header class="hero">
+      <div class="eyebrow"><span class="pulse"></span>个人知识库</div>
+      <h1>Notes <span class="accent">知识库</span></h1>
+      <p class="sub">Java 面试笔记 · AI 学习笔记 · 每日笔记，一站式沉淀与复习。</p>
+    </header>
+
+    <!-- 三张卡片 -->
+    <div class="cards">
+      <!-- Java 笔记 -->
+      <a class="card card-java" href="app.html">
+        <div class="card-art">
+          <div class="art-java">
+            <div class="ring"></div>
+            <div class="ring"></div>
+            <div class="ring"></div>
+            <div class="core"></div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-title">Java 笔记</div>
+          <div class="card-desc">JVM、并发、Spring、数据库、中间件等系统化面试笔记，含流程图与面试话术。</div>
+          <div class="card-meta">
+            <div class="stat"><b id="java-count">0</b> 篇笔记</div>
+            <div class="arrow">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </div>
+          </div>
+        </div>
+      </a>
+
+      <!-- AI 笔记 -->
+      <a class="card card-ai" href="ai-app.html">
+        <div class="card-art">
+          <div class="art-ai" id="art-ai"></div>
+        </div>
+        <div class="card-body">
+          <div class="card-title">AI 笔记</div>
+          <div class="card-desc">LangChain、Agent、RAG、Function Calling 等 AI 工程化学习笔记，含流程图与面试话术。</div>
+          <div class="card-meta">
+            <div class="stat"><b id="ai-count">0</b> 篇笔记</div>
+            <div class="arrow">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </div>
+          </div>
+        </div>
+      </a>
+
+      <!-- 每日笔记 -->
+      <a class="card card-daily" href="daily.html">
+        <div class="card-art">
+          <div class="art-daily">
+            <div class="d-num" id="today-num">--</div>
+            <div class="d-label" id="today-label">DAILY</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-title">每日笔记</div>
+          <div class="card-desc">按日期分组的每日学习笔记，默认展示最新一天，持续积累中。</div>
+          <div class="card-meta">
+            <div class="stat"><b id="daily-count">0</b> 篇笔记</div>
+            <div class="arrow">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </div>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <footer class="footer">
+      <span>个人知识库</span><span class="dot">·</span><span>移动端阅读优化</span><span class="dot">·</span><span id="year"></span>
+    </footer>
+  </div>
+
+<script src="theme.js"></script>
+<script src="settings-panel.js"></script>
+<script>
+  // 今日日期显示在每日卡片上
+  (function(){
+    const now = new Date();
+    document.getElementById('today-num').textContent = now.getDate();
+    const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    document.getElementById('today-label').textContent = months[now.getMonth()];
+    document.getElementById('year').textContent = now.getFullYear() + ' © Notes';
+  })();
+
+  // 拉取每日笔记数量
+  fetch('daily.json').then(r => r.json()).then(list => {
+    document.getElementById('daily-count').textContent = list.length;
+  }).catch(()=>{});
+
+  // 拉取 AI 笔记数量（按 category === 'AI' 统计）
+  fetch('notes.json').then(r => r.json()).then(list => {
+    const aiCount = (list || []).filter(n => n.category === 'AI').length;
+    document.getElementById('ai-count').textContent = aiCount;
+    // Java 笔记 = 总数 - AI 笔记
+    document.getElementById('java-count').textContent = (list || []).length - aiCount;
+  }).catch(()=>{});
+
+  // AI 卡片神经网络图案（简洁质感）
+  (function(){
+    const art = document.getElementById('art-ai');
+    if(!art) return;
+    // 三层节点位置（左中右）
+    const layers = [
+      [{x:6,y:18},{x:6,y:78}],
+      [{x:55,y:8},{x:55,y:48},{x:55,y:88}],
+      [{x:104,y:28},{x:104,y:68}]
+    ];
+    // 连线
+    layers[0].forEach(a => layers[1].forEach(b => {
+      const line = document.createElement('div');
+      line.className = 'line';
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const len = Math.sqrt(dx*dx + dy*dy);
+      line.style.left = (a.x+5) + 'px';
+      line.style.top = (a.y+5) + 'px';
+      line.style.width = len + 'px';
+      line.style.transform = 'rotate(' + (Math.atan2(dy,dx)*180/Math.PI) + 'deg)';
+      art.appendChild(line);
+    }));
+    layers[1].forEach(a => layers[2].forEach(b => {
+      const line = document.createElement('div');
+      line.className = 'line';
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const len = Math.sqrt(dx*dx + dy*dy);
+      line.style.left = (a.x+5) + 'px';
+      line.style.top = (a.y+5) + 'px';
+      line.style.width = len + 'px';
+      line.style.transform = 'rotate(' + (Math.atan2(dy,dx)*180/Math.PI) + 'deg)';
+      art.appendChild(line);
+    }));
+    // 节点
+    layers.flat().forEach(n => {
+      const node = document.createElement('div');
+      node.className = 'node';
+      node.style.left = n.x + 'px';
+      node.style.top = n.y + 'px';
+      art.appendChild(node);
+    });
+  })();
+</script>
+</body>
+</html>

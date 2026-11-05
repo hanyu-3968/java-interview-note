@@ -1,0 +1,178 @@
+<section class="note" data-note-id="jvm-tuning" data-note-title="JVM调优与CPU飙升定位">
+
+  <p class="tldr">CPU 飙高 5 步定位 + GC 现象猜根因 + 参数调优闭环。</p>
+
+  <h2>一、CPU 飙升的 5 大元凶</h2>
+  <p class="tldr">码线多外配：代码、并发、流量、IO、配置。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>类别</th><th>典型场景</th><th>一句话根因</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><mark>① 代码逻辑</mark></td>
+        <td>while(true) 死循环、正则灾难性回溯、频繁创建临时对象引发 GC</td>
+        <td>线程在疯狂运算或频繁 GC，CPU 全被吃掉</td>
+      </tr>
+      <tr>
+        <td><mark>② 线程并发</mark></td>
+        <td>CAS 自旋锁反复失败、线程池过大导致频繁上下文切换</td>
+        <td>线程在空转等待或频繁切换，CPU 空耗</td>
+      </tr>
+      <tr>
+        <td><mark>③ 外部 IO</mark></td>
+        <td>日志打印过多、频繁磁盘 IO/网络 IO</td>
+        <td>频繁用户态↔内核态切换，系统调用开销大</td>
+      </tr>
+      <tr>
+        <td><mark>④ JVM 配置</mark></td>
+        <td>堆内存太小频繁 GC、栈内存太小、JIT 编译过热</td>
+        <td>GC 线程占用大量 CPU，或 JIT 编译过热</td>
+      </tr>
+      <tr>
+        <td><mark>⑤ 流量激增</mark></td>
+        <td>秒杀/大促流量暴涨、监控工具/日志轮转脚本抢占 CPU</td>
+        <td>请求量过大，工作线程飙升，超出系统承载</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>记忆口诀：<mark>码线多外配</mark>——码（代码逻辑）、线（线程并发）、多（流量激增）、外（外部 IO）、配（JVM 配置）。</p>
+  <p><span class="supplement">补充：CPU 飙高不一定是业务代码问题。GC 线程忙（堆太小）、锁竞争空转（线程池过大）、系统进程抢占（监控脚本）都会让 CPU 飙高。先 top 看是 java 进程自身占高还是系统进程，再决定排查方向。</span></p>
+
+  <h2>二、CPU 飙升 · 5 步定位法</h2>
+  <p class="tldr">进→线→转→栈→判，从进程到代码行。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>步骤</th><th>命令</th><th>做什么</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td><code>top</code> / <code>htop</code></td><td>找出高 CPU 进程 PID</td></tr>
+      <tr><td>2</td><td><code>top -H -p &lt;PID&gt;</code></td><td>找出该进程内高 CPU 线程 TID</td></tr>
+      <tr><td>3</td><td><code>printf "%x\n" &lt;TID&gt;</code></td><td>线程 ID 转十六进制</td></tr>
+      <tr><td>4</td><td><code>jstack &lt;PID&gt; | grep -A 30 &lt;十六进制TID&gt;</code></td><td>定位该线程正在执行的代码行</td></tr>
+      <tr><td>5</td><td>按堆栈类型判断</td><td>GC 线程→jstat；业务线程→查死循环；锁竞争→Arthas</td></tr>
+    </tbody>
+  </table>
+  <p>记忆口诀：<mark>进→线→转→栈→判</mark>（进程→线程→转 16 进制→堆栈→判断）。</p>
+
+  <h2>三、JVM 优化核心命令</h2>
+  <p class="tldr">-Xms=-Xmx 避免扩容，DisableExplicitGC 禁人为 GC。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>命令/参数</th><th>作用</th><th>示例</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>java -X</code></td><td>查看非标准参数列表</td><td><code>java -X</code></td></tr>
+      <tr><td><mark><code>-Xms</code> / <code>-Xmx</code></mark></td><td>堆内存初始值 / 最大值</td><td><code>java -Xms512m -Xmx2048m TestJVM</code></td></tr>
+      <tr><td><code>-XX:+DisableExplicitGC</code></td><td>禁用 <code>System.gc()</code> 调用</td><td><code>-XX:+DisableExplicitGC</code></td></tr>
+      <tr><td><code>jstat -gcutil</code></td><td>实时查看 GC 状态</td><td><code>jstat -gcutil 25048 5000 100</code></td></tr>
+      <tr><td><code>jmap -dump</code></td><td>导出堆内存快照（会 STW）</td><td><code>jmap -dump:live,format=b,file=heap.hprof 25048</code></td></tr>
+    </tbody>
+  </table>
+  <p>堆内存调优原则：</p>
+  <ul>
+    <li><mark>-Xms = -Xmx</mark>：设为相同，避免运行时动态扩容/缩容的性能损耗。</li>
+    <li><mark>-Xmx</mark>：取物理内存的 60%~70%，留出空间给元空间、栈内存、操作系统。</li>
+    <li>新生代占比：堆的 1/3 ~ 1/4，避免新生代太大导致 YGC 时间过长。</li>
+  </ul>
+  <p><span class="supplement">补充：-Xms 和 -Xmx 设为相同不是"浪费内存"，而是避免堆动态扩容时的内存申请、缺页中断、GC 暂停增加。生产环境宁可"浪费"一点内存，也不要不可预测的性能抖动。</span></p>
+
+  <h2>四、问题类型快速判断</h2>
+  <p class="tldr">泄不降，快降半，元不动，频不高。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>观察现象</th><th>根因</th><th>应对策略</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>老年代持续增长，FGC 后<mark>几乎不降</mark></td>
+        <td>内存泄漏（强引用链未断开）</td>
+        <td>导出 Heap Dump → MAT 找 GC Roots</td>
+      </tr>
+      <tr>
+        <td>老年代增长快，FGC 后<mark>回收大部分</mark></td>
+        <td>临时对象晋升过快 / Survivor 区太小</td>
+        <td>调大新生代或 Survivor 区比例</td>
+      </tr>
+      <tr>
+        <td>元空间持续增长，FGC <mark>无法回收</mark></td>
+        <td>类加载器泄漏（动态生成类未卸载）</td>
+        <td>检查 CGLib 代理/热部署场景</td>
+      </tr>
+      <tr>
+        <td>FGC 频繁，但老年代<mark>占用不高</mark></td>
+        <td>代码中调用了 <code>System.gc()</code></td>
+        <td>加 <code>-XX:+DisableExplicitGC</code> 禁用</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>记忆口诀：<mark>泄不降，快降半，元不动，频不高</mark>——对应四种 GC 现象。</p>
+
+  <h2>五、JVM 内存模型</h2>
+  <p class="tldr">线程私有（计数器、栈）+ 线程共享（堆、方法区）。</p>
+  <p><mark>线程私有</mark>（随线程生灭）：</p>
+  <ul>
+    <li><mark>程序计数器</mark>：记录当前线程执行到哪一行字节码。</li>
+    <li><mark>虚拟机栈</mark>：执行 Java 方法，每个方法对应一个栈帧（含局部变量表、操作数栈等）。</li>
+  </ul>
+  <p><mark>线程共享</mark>（所有线程共用）：</p>
+  <ul>
+    <li><mark>Java 堆</mark>：存放几乎所有对象实例和数组，GC 主要发生地，分新生代和老年代。</li>
+    <li><mark>方法区</mark>：存储类信息、常量、静态变量、Class 对象；JDK8 后改为<mark>元空间（Metaspace）</mark>，使用本地内存。</li>
+  </ul>
+  <table class="cmp">
+    <thead>
+      <tr><th>版本</th><th>堆内存结构</th><th>方法区位置</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>JDK 7 及以前</td><td>新生代 + 老年代 + 永久代</td><td>永久代（堆内，<code>-XX:MaxPermSize</code> 限定）</td></tr>
+      <tr><td>JDK 8 及以后</td><td>新生代 + 老年代</td><td><mark>元空间</mark>（移出堆，使用本地内存）</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：方法区是 JVM 规范定义的逻辑区域，永久代和元空间都是它的实现。JDK8 把实现从"堆内的永久代"换成"本地内存的元空间"，不是"取消方法区"。移出堆的原因是永久代大小固定容易 OOM，元空间用本地内存默认几乎无限，动态加载类更灵活。</span></p>
+
+  <h2>六、面试串联话术</h2>
+  <p class="tldr">现象→工具→根因→修复一气呵成。</p>
+  <blockquote>
+    <p>线上 CPU 飙高，我会按这个思路快速排查：第一步用 top -H -p 找到最忙的线程 ID，转成十六进制后用 jstack 定位到具体代码行。</p>
+    <p>第二步看堆栈指向哪里——如果是 GC 线程在忙，就用 jstat 看 GC 频率，再结合 jmap 导出堆 Dump 用 MAT 分析；如果是业务线程，就检查是否有死循环或正则回溯。</p>
+    <p>第三步根据分析结果调整 JVM 参数。比如堆内存太小导致频繁 GC，就把 -Xmx 调大，同时让 -Xms 等于 -Xmx 避免动态扩容；如果发现 System.gc() 被频繁调用，就加上 -XX:+DisableExplicitGC 禁用。</p>
+    <p>最后，如果是流量激增导致的工作线程飙升，光调 JVM 没用，需要限流或扩容。JVM 参数调优是兜底，真正的根治还是要优化代码和架构。</p>
+  </blockquote>
+
+  <script type="text/template" id="mindmap-jvm-tuning">
+# JVM调优
+## CPU飙升5大元凶
+### 代码逻辑问题
+### 死循环正则回溯
+### 线程并发问题
+### CAS自旋上下文切换
+### 外部IO调用
+### 用户态内核态切换
+### JVM配置问题
+### 堆太小频繁GC
+### 流量激增
+### 秒杀大促流量暴涨
+## 5步定位法
+### top找进程
+### top -H找线程
+### printf转十六进制
+### jstack定位代码行
+### 按堆栈类型判断
+## JVM优化命令
+### -Xms等于-Xmx
+### DisableExplicitGC
+### jstat看GC状态
+### jmap导出Dump
+## 问题类型判断
+### 老年代不降是泄漏
+### 老年代降半是晋升快
+### 元空间不动是类泄漏
+### FGC频繁老年代不高是System.gc
+## JVM内存模型
+### 程序计数器线程私有
+### 虚拟机栈线程私有
+### Java堆线程共享
+### 方法区JDK8改元空间
+  </script>
+</section>

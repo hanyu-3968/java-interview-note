@@ -1,0 +1,354 @@
+<section class="note" data-note-id="network" data-note-title="网络传输：TCP/UDP、握手挥手与跨域">
+
+  <p class="tldr">TCP 可靠有序，UDP 轻快无序，跨域网关层解决。</p>
+
+  <h2>一、TCP 与 UDP 的区别和使用场景</h2>
+  <p class="tldr">可靠换效率：TCP 稳但慢，UDP 快但糙。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>TCP</th><th>UDP</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>连接</td>
+        <td><mark>面向连接</mark>，需三次握手建立</td>
+        <td>无连接，直接发起</td>
+        <td>TCP 打电话先拨号，UDP 寄明信片</td>
+      </tr>
+      <tr>
+        <td>可靠性</td>
+        <td>有 <mark>ACK 确认 + 超时重传</mark>，可靠</td>
+        <td>不确认不重传，不可靠</td>
+        <td>TCP 收货签字，UDP 扔门口就走</td>
+      </tr>
+      <tr>
+        <td>有序性</td>
+        <td><mark>序列号</mark>排序，按序到达</td>
+        <td>无序，可能乱序</td>
+        <td>TCP 排队入场，UDP 谁先到谁先上</td>
+      </tr>
+      <tr>
+        <td>数据形式</td>
+        <td>面向<mark>字节流</mark></td>
+        <td>面向报文</td>
+        <td>TCP 水流连续，UDP 一个一个包裹</td>
+      </tr>
+      <tr>
+        <td>流量控制</td>
+        <td>有<mark>滑动窗口</mark></td>
+        <td>无</td>
+        <td>TCP 看对方脸色发，UDP 闷头狂发</td>
+      </tr>
+      <tr>
+        <td>头部开销</td>
+        <td>20 字节起</td>
+        <td>8 字节</td>
+        <td>TCP 行李多，UDP 轻装</td>
+      </tr>
+    </tbody>
+  </table>
+  <table class="cmp">
+    <thead>
+      <tr><th>协议</th><th>适用场景</th><th>典型应用</th><th>选择理由</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>TCP</td>
+        <td>效率低、准确性高</td>
+        <td>文件传输、收发邮件、远程登录</td>
+        <td>数据不能丢，丢了要重传</td>
+      </tr>
+      <tr>
+        <td>UDP</td>
+        <td>效率高、准确性低</td>
+        <td>QQ 聊天、视频直播、DNS、游戏</td>
+        <td>实时性优先，丢几帧无所谓</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充："TCP 面向字节流"不是一次发一个字节，而是发送方写多少由应用决定，TCP 把数据当连续字节流切包发送，接收方读到的边界和发送方写入边界可能不一致；UDP 面向报文则是应用给一个完整报文，UDP 原样发出，边界保留。</span></p>
+
+  <h2>二、三次握手与四次挥手</h2>
+  <p class="tldr">建连三次确认收发能力，断连四次因全双工。</p>
+  <h3>三次握手详细步骤</h3>
+  <table class="cmp">
+    <thead>
+      <tr><th>步骤</th><th>方向</th><th>报文</th><th>序号/标志</th><th>状态变化</th><th>含义</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>第一次</td>
+        <td>客户端 → 服务端</td>
+        <td><mark>SYN</mark></td>
+        <td>seq=x, SYN=1</td>
+        <td>客户端 SYN_SENT</td>
+        <td>"我想连你"</td>
+      </tr>
+      <tr>
+        <td>第二次</td>
+        <td>服务端 → 客户端</td>
+        <td><mark>SYN+ACK</mark></td>
+        <td>seq=y, ack=x+1, SYN=1, ACK=1</td>
+        <td>服务端 SYN_RCVD</td>
+        <td>"我收到了，也想连你"</td>
+      </tr>
+      <tr>
+        <td>第三次</td>
+        <td>客户端 → 服务端</td>
+        <td><mark>ACK</mark></td>
+        <td>seq=x+1, ack=y+1, ACK=1</td>
+        <td>双方 ESTABLISHED</td>
+        <td>"收到确认，连接建立"</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：为什么是三次不是两次？两次握手无法防止历史连接——旧的 SYN 延迟到达服务端，服务端误以为是新连接直接开资源，浪费。第三次 ACK 让客户端有机会发现"这是旧连接"并发 RST 重置。</span></p>
+
+  <h3>四次挥手详细步骤</h3>
+  <table class="cmp">
+    <thead>
+      <tr><th>步骤</th><th>方向</th><th>报文</th><th>状态变化</th><th>含义</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>第一次</td>
+        <td>主动方 → 被动方</td>
+        <td><mark>FIN</mark></td>
+        <td>主动方 FIN_WAIT_1</td>
+        <td>"我没数据发了，想断"</td>
+      </tr>
+      <tr>
+        <td>第二次</td>
+        <td>被动方 → 主动方</td>
+        <td>ACK</td>
+        <td>主动方 FIN_WAIT_2，被动方 <mark>CLOSE_WAIT</mark></td>
+        <td>"收到，但我可能还有数据要发"</td>
+      </tr>
+      <tr>
+        <td>第三次</td>
+        <td>被动方 → 主动方</td>
+        <td>FIN</td>
+        <td>被动方 LAST_ACK</td>
+        <td>"我也发完了，可以断了"</td>
+      </tr>
+      <tr>
+        <td>第四次</td>
+        <td>主动方 → 被动方</td>
+        <td>ACK</td>
+        <td>主动方 <mark>TIME_WAIT</mark> → CLOSED</td>
+        <td>"收到，再见"</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：为什么断连要四次？TCP 是全双工，主动方不发数据不代表被动方也没数据发。被动方收到 FIN 先回 ACK（半关闭），等自己数据发完再单独发 FIN，需要四步。</span></p>
+
+  <h3>TIME_WAIT 为什么存在</h3>
+  <p>主动关闭方发完最后一个 ACK 后要等 <mark>2MSL</mark>（最大报文生存时间）才进 CLOSED，原因有二：</p>
+  <ul>
+    <li><strong>保证最后一个 ACK 到达</strong>：若被动方没收到 ACK 会重发 FIN，主动方留在 TIME_WAIT 才能重发 ACK。</li>
+    <li><strong>防止旧报文干扰新连接</strong>：等 2MSL 让本次连接的所有报文都消失，避免和同四元组的新连接混淆。</li>
+  </ul>
+  <p><span class="supplement">补充：CLOSE_WAIT 是被动方收到 FIN 后、还没发自己 FIN 时的状态，大量 CLOSE_WAIT 说明应用代码没调用 close()（连接泄漏）；TIME_WAIT 是主动方发完 ACK 后的等待状态，大量 TIME_WAIT 是主动频繁断连导致，可用连接池或 SO_REUSEADDR 缓解。两者方向相反，排查方向也相反。</span></p>
+
+  <h2>三、TCP 如何保证可靠性</h2>
+  <p class="tldr">必达 + 正确 + 流量匹配，三机制撑起可靠招牌。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>机制</th><th>组成</th><th>解决的问题</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>数据必达</td>
+        <td><mark>序号 + 确认 + 超时重传</mark></td>
+        <td>丢包、乱序</td>
+        <td>寄快递有单号，签收有回执，超时补发</td>
+      </tr>
+      <tr>
+        <td>数据正确</td>
+        <td>重新排序 + 丢弃重复</td>
+        <td>乱序、重复包</td>
+        <td>收到包裹按单号排好，重复的扔掉</td>
+      </tr>
+      <tr>
+        <td>流量匹配</td>
+        <td><mark>滑动窗口</mark>（流量控制）</td>
+        <td>接收方处理不过来</td>
+        <td>仓库满了告诉发货方"慢点发"</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3>滑动窗口机制</h3>
+  <p><mark>滑动窗口</mark>是 TCP 流量控制的核心：接收方在 ACK 报文里带上窗口大小（rwnd），告诉发送方"我还能收多少字节"。发送方据此调整发送速度，窗口向前"滑动"。</p>
+  <ul>
+    <li><strong>窗口 = 0</strong>：接收方缓冲区满，发送方暂停发送，定期发窗口探测报文问"能收了吗"。</li>
+    <li><strong>窗口 &gt; 0</strong>：发送方在窗口内连续发多个包，不必等每个包的 ACK（提升效率）。</li>
+    <li><strong>窗口滑动</strong>：收到 ACK 确认的数据移出窗口，窗口前沿向前推，新数据可继续发。</li>
+  </ul>
+  <p><span class="supplement">补充：滑动窗口（流量控制）和拥塞窗口（拥塞控制）是两回事。滑动窗口是接收方告诉发送方"我能收多少"（防压垮接收方）；拥塞窗口是发送方自己根据网络拥塞程度估算"网络能扛多少"（防压垮网络）。实际发送窗口 = min(滑动窗口, 拥塞窗口)。</span></p>
+
+  <h2>四、跨域问题与网关层解决</h2>
+  <p class="tldr">跨域是浏览器同源策略限制，网关层统一加 CORS 头。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>概念</th><th>说明</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><mark>同源策略</mark></td>
+        <td>浏览器限制脚本跨源访问资源的安全机制</td>
+        <td>不同小区的门禁，外人进不来</td>
+      </tr>
+      <tr>
+        <td>跨域判定</td>
+        <td>协议 + 域名 + 端口三者全相同才同源</td>
+        <td>三要素对齐才算一家人</td>
+      </tr>
+      <tr>
+        <td>简单请求</td>
+        <td>GET/POST/HEAD + 常见头 + 特定 Content-Type</td>
+        <td>直接发，浏览器带 Origin 头</td>
+      </tr>
+      <tr>
+        <td>非简单请求</td>
+        <td>PUT/DELETE 或自定义头等</td>
+        <td>先发 <mark>OPTIONS 预检</mark>，通过才发真请求</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3>网关层统一解决（信贷业务实战）</h3>
+  <p>我们信贷业务是<mark>中间层中台架构</mark>：前端 → 入向网关 → 开放平台 → 应用。跨域问题在<mark>网关层统一解决</mark>，业务应用本身不需要配置。</p>
+  <ul>
+    <li><strong>处理 OPTIONS 预检</strong>：非简单请求浏览器会先发 OPTIONS，网关直接返回 CORS 响应头放行。</li>
+    <li><strong>响应头配置</strong>：Access-Control-Allow-Origin（允许的源）、Access-Control-Allow-Methods（允许的方法）、Access-Control-Allow-Headers（允许的头）。</li>
+    <li><strong>关键坑</strong>：<mark>allowCredentials=true</mark>（允许带 Cookie）时，allowedOrigins 不能用通配符 *，必须指定具体域名，否则浏览器拒绝。</li>
+  </ul>
+  <p><span class="supplement">补充：跨域是浏览器的限制，不是服务器的限制——服务器照样收到请求并响应，是浏览器拿到响应后看 CORS 头不对才拦截、不给脚本。所以用 Postman/curl 永远不跨域，只有浏览器才跨域。</span></p>
+
+  <h2>五、浏览器输入 URL 全流程</h2>
+  <p class="tldr">DNS→握手→请求→处理→渲染→挥手→加载资源。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>步骤</th><th>动作</th><th>关键点</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td><mark>DNS 解析</mark></td>
+        <td>域名 → IP，先查浏览器/系统缓存，再查本地 DNS，再递归查询</td>
+        <td>查通讯录找电话号码</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>三次握手</td>
+        <td>客户端与服务端建立 TCP 连接</td>
+        <td>拨号确认对方在</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>发 HTTP 请求</td>
+        <td>请求行（方法+URL+版本）+ 请求头 + 请求体</td>
+        <td>写信装信封寄出</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td>服务器处理</td>
+        <td>路由分发 → 业务逻辑 → 查库 → 生成响应</td>
+        <td>收信人拆信处理</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td><mark>浏览器渲染</mark></td>
+        <td>解析 HTML 建 DOM，解析 CSS 建 CSSOM，合成渲染树，布局，绘制</td>
+        <td>按图纸搭房子刷墙</td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td>四次挥手</td>
+        <td>断开 TCP 连接（HTTP/1.1 默认 keep-alive 可复用）</td>
+        <td>挂电话</td>
+      </tr>
+      <tr>
+        <td>7</td>
+        <td>加载外部资源</td>
+        <td>JS、图片、CSS 等按优先级加载，可能触发新连接</td>
+        <td>装修买家具</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：DNS 解析顺序是浏览器缓存 → 系统缓存（hosts）→ 本地 DNS 服务器 → 根/顶级/权威 DNS 递归查询，不是直接问根服务器。HTTP/1.1 默认 Connection: keep-alive，连接会复用，不一定每次请求都四次挥手；HTTP/2 多路复用更进一步，一个连接跑多个请求。</span></p>
+
+  <h2>六、高频场景题</h2>
+  <p class="tldr">建连三次断连四次，TIME_WAIT 排查，跨域网关解决。</p>
+  <h3>"为什么 TCP 建连要三次，断连要四次？"</h3>
+  <p>建连只需确认双方收发能力（三次够），断连因全双工两端各自关闭（需四次）。</p>
+  <h3>"TIME_WAIT 太多怎么排查？"</h3>
+  <p>TIME_WAIT 是主动关闭方的等待状态，多说明应用频繁主动断连（如短连接、未用连接池）。排查方向：看是哪个服务主动关、能否改长连接或连接池、必要时调 tcp_tw_reuse。</p>
+  <h3>"跨域问题怎么解决？你们怎么做的？"</h3>
+  <p>跨域是浏览器同源策略限制，我们在网关层统一加 CORS 响应头解决，业务应用不配置；注意带 Cookie 时不能用通配符。</p>
+  <h3>"TCP 怎么保证可靠传输？"</h3>
+  <p>三大机制——序号+确认+超时重传保必达，重排+去重保正确，滑动窗口保双方处理能力匹配。</p>
+
+  <h2>七、面试回答模板</h2>
+  <p class="tldr">三句话讲清 TCP/UDP 选型与跨域实战。</p>
+  <blockquote>
+    <p>问题本质是问 TCP 与 UDP 的传输层选型差异，背后是"可靠性"与"效率"的取舍。</p>
+    <p>机制是 TCP 面向连接，靠三次握手建连、四次挥手断连，靠序号+确认+超时重传保证数据必达，靠滑动窗口做流量控制匹配双方处理能力；UDP 无连接、不确认不重传，轻量高效但不可靠。</p>
+    <p>实战中我会根据场景选型：文件传输、邮件、远程登录等准确性要求高的用 TCP；视频直播、即时通讯、DNS 查询等实时性要求高的用 UDP；跨域问题在网关层统一加 CORS 头解决，业务应用不重复配置。</p>
+  </blockquote>
+
+  <h2>八、最后复习：闭眼回忆 8 句</h2>
+  <p class="tldr">八句话串起网络传输核心。</p>
+  <ol>
+    <li>TCP 面向连接可靠有序有流控，UDP 无连接轻快无序无流控——可靠换效率。</li>
+    <li>三次握手：SYN → SYN+ACK → ACK，确认双方收发能力，防历史连接。</li>
+    <li>四次挥手：FIN → ACK → FIN → ACK，因 TCP 全双工两端各自关闭。</li>
+    <li>TIME_WAIT 等 2MSL：保最后一个 ACK 到位 + 防旧报文干扰新连接。</li>
+    <li>CLOSE_WAIT 多是应用没调 close()（连接泄漏），TIME_WAIT 多是频繁主动断连。</li>
+    <li>TCP 可靠性三机制：序号确认重传保必达，重排去重保正确，滑动窗口保匹配。</li>
+    <li>滑动窗口是接收方告诉发送方"能收多少"（流控），拥塞窗口是发送方估算"网络能扛多少"（拥塞控制）。</li>
+    <li>跨域在网关层统一解决，处理 OPTIONS 预检，带 Cookie 时 allowedOrigins 不能用通配符。</li>
+  </ol>
+
+  <script type="text/template" id="mindmap-network">
+# 网络传输TCP/UDP握手挥手跨域
+## TCP与UDP区别
+### TCP面向连接
+### UDP无连接
+### TCP可靠有序有流控
+### UDP轻快无序无流控
+### TCP字节流UDP报文
+### TCP文件传输邮件
+### UDP聊天直播DNS
+## 三次握手四次挥手
+### 握手SYN SYNACK ACK
+### 确认双方收发能力
+### 防历史连接浪费
+### 挥手FIN ACK FIN ACK
+### 全双工两端各自关
+### TIME_WAIT等2MSL
+### 保ACK到位防旧报文
+### CLOSE_WAIT连接泄漏
+## TCP可靠性三机制
+### 序号确认超时重传
+### 数据必达
+### 重排去重保正确
+### 滑动窗口流量控制
+### 接收方告诉能收多少
+### 拥塞窗口防压垮网络
+## 跨域问题
+### 浏览器同源策略限制
+### 协议域名端口三要素
+### 简单请求直接发
+### 非简单OPTIONS预检
+### 网关层统一解决
+### 带Cookie不用通配符
+## 浏览器输入URL全流程
+### DNS解析找IP
+### 三次握手建连接
+### 发HTTP请求
+### 服务器处理返回
+### 浏览器渲染DOM CSSOM
+### 四次挥手断开
+### 继续加载外部资源
+  </script>
+</section>

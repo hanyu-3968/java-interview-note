@@ -1,0 +1,209 @@
+<section class="note" data-note-id="mybatis" data-note-title="MyBatis：运行原理与缓存机制">
+
+  <p class="tldr">运行四环节 + resultMap 映射 + 批量插入 + 主键回填 + 一二级缓存。</p>
+
+  <h2>一、字段名与属性名不一致：resultMap 映射</h2>
+  <p class="tldr">别名改 SQL，resultMap 改映射，优先用 resultMap。</p>
+  <p>实体类属性名和表字段名对不上时，查询结果会丢值。两种解法，<mark>优先用 resultMap</mark>。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>方式</th><th>写法</th><th>优点</th><th>缺点</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>方式 1：SQL 别名</td><td><code>SELECT user_name AS userName FROM t_user</code></td><td>零配置，改 SQL 即可</td><td>SQL 与映射耦合，多表复用差</td></tr>
+      <tr><td>方式 2：<mark>resultMap</mark></td><td><code>&lt;resultMap&gt;</code> 标签显式映射列与属性</td><td>解耦、可复用、支持多表关联</td><td>需额外写映射配置</td></tr>
+    </tbody>
+  </table>
+  <p>resultMap 核心写法：</p>
+  <pre><code>&lt;resultMap id="userMap" type="User"&gt;
+  &lt;id column="user_id" property="userId"/&gt;
+  &lt;result column="user_name" property="userName"/&gt;
+&lt;/resultMap&gt;
+&lt;select id="findById" resultMap="userMap"&gt;
+  SELECT user_id, user_name FROM t_user WHERE user_id = #{id}
+&lt;/select&gt;</code></pre>
+  <p><span class="supplement">补充：<code>resultType</code> 和 <code>resultMap</code> 二选一，不能同时用。resultType 适合字段名与属性名一致（或别名后一致）的简单场景；resultMap 适合字段名不一致、多表关联、一对多/多对多复杂映射。别用 resultType=Map 凑合——丢失类型信息且字段名大小写敏感。</span></p>
+
+  <h2>二、结果封装：反射创建对象并赋值</h2>
+  <p class="tldr">resultMap 定义映射，反射 new 对象、set 属性。</p>
+  <p>MyBatis 把 ResultSet 转成 Java 对象，靠的是 <mark>resultMap + 反射</mark>。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>步骤</th><th>做什么</th><th>关键组件</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td>读取 resultMap 中列与属性的映射关系</td><td>ResultSetHandler</td></tr>
+      <tr><td>2</td><td>通过<mark>反射</mark>调用无参构造创建目标对象</td><td><code>Class.newInstance()</code> / Constructor</td></tr>
+      <tr><td>3</td><td>遍历 ResultSet 列，按映射用<mark>反射</mark>给属性赋值</td><td><code>Field.set()</code> / setter</td></tr>
+      <tr><td>4</td><td>处理关联对象（association/collection）递归封装</td><td>嵌套 resultMap</td></tr>
+    </tbody>
+  </table>
+  <p><mark>核心机制</mark>：<code>ResultSetHandler.handleResultSets()</code> 根据 resultMap 的元数据，用反射创建对象、用反射给属性赋值，把数据库行 → Java 对象。这就是"为什么属性名要和列名对应"——反射按 property 名找 setter/field。</p>
+  <p><span class="supplement">补充：反射赋值走的是 setter 方法（如果存在），不是直接 set field；没有 setter 时才走 field 反射（需 autoMapping 或 accessField 配置）。所以实体类要么提供无参构造 + setter，要么用 @Builder + 默认构造。</span></p>
+
+  <h2>三、批量插入：foreach 拼接 SQL</h2>
+  <p class="tldr">foreach 遍历 list，逗号拼单条多行 VALUES。</p>
+  <p>单条 insert 循环太慢，用 <code>&lt;foreach&gt;</code> 一次拼多条 VALUES。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>标签/属性</th><th>作用</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>&lt;insert&gt;</code></td><td>定义插入语句</td><td>装数据的箱子</td></tr>
+      <tr><td><code>parameterType="java.util.List"</code></td><td>声明参数是 List</td><td>进货清单</td></tr>
+      <tr><td><mark><code>&lt;foreach&gt;</code></mark></td><td>遍历集合拼 SQL</td><td>流水线逐件打包</td></tr>
+      <tr><td><code>collection="list"</code></td><td>集合名（List 默认 list）</td><td>取哪摞货</td></tr>
+      <tr><td><code>index="i"</code></td><td>下标</td><td>第几件</td></tr>
+      <tr><td><code>item="u"</code></td><td>当前元素别名</td><td>这件货叫 u</td></tr>
+      <tr><td><code>separator=","</code></td><td>元素间分隔符</td><td>货之间隔开</td></tr>
+      <tr><td><code>&lt;include refid="cols"/&gt;</code></td><td>引用 sql 片段</td><td>复用同款包装</td></tr>
+    </tbody>
+  </table>
+  <p>批量插入写法：</p>
+  <pre><code>&lt;insert id="batchInsert" parameterType="java.util.List"&gt;
+  INSERT INTO t_user (user_name, age) VALUES
+  &lt;foreach collection="list" item="u" separator=","&gt;
+    (#{u.userName}, #{u.age})
+  &lt;/foreach&gt;
+&lt;/insert&gt;</code></pre>
+  <p><span class="supplement">补充：批量插入有两种拼法——① VALUES (...),(...),(...) 一条 SQL 多行（推荐，一次网络往返）；② separator=";" 拼多条 INSERT 语句（需 JDBC URL 加 allowMultiQueries=true，有 SQL 注入风险，不推荐）。优先用第一种单条多行 VALUES。</span></p>
+
+  <h2>四、主键回填：useGeneratedKeys</h2>
+  <p class="tldr">自增用 useGeneratedKeys，非自增用 selectKey。</p>
+  <p>自增主键插入后，把生成的主键塞回参数对象，供后续逻辑使用。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>配置</th><th>作用</th><th>适用</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark><code>useGeneratedKeys="true"</code></mark></td><td>开启自增主键回填</td><td>仅自增长策略</td></tr>
+      <tr><td><code>keyProperty="id"</code></td><td>回填到参数对象的哪个属性</td><td>实体类主键字段</td></tr>
+      <tr><td><code>&lt;selectKey&gt;</code> 标签</td><td>自定义取主键 SQL（如序列、UUID）</td><td>非自增主键</td></tr>
+    </tbody>
+  </table>
+  <p>写法：</p>
+  <pre><code>&lt;insert id="insert" useGeneratedKeys="true" keyProperty="id"&gt;
+  INSERT INTO t_user (user_name) VALUES (#{userName})
+&lt;/insert&gt;</code></pre>
+  <p>执行后 <code>user.getId()</code> 即可拿到回填的主键值。</p>
+  <p><span class="supplement">补充：useGeneratedKeys 只对自增长主键有效；Oracle 序列、UUID 等非自增主键要用 &lt;selectKey&gt; 标签自定义取值（如 SELECT SEQ_USER.NEXTVAL FROM DUAL）。keyProperty 是实体属性名，不是列名。</span></p>
+
+  <h2>五、运行原理四环节：解析 → 代理 → 执行 → 封装</h2>
+  <p class="tldr">解析 Configuration → 代理 MapperProxy → 执行 Executor → 封装三 Handler。</p>
+  <p>MyBatis 从接口调用到结果返回的完整链路，分<mark>四个环节</mark>。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>环节</th><th>时机</th><th>做什么</th><th>核心组件</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>1. 解析</mark></td><td>启动时</td><td>读取所有 XML 配置文件，把 SQL 和参数配置封装到 Configuration 全局对象</td><td>XMLConfigBuilder</td></tr>
+      <tr><td><mark>2. 代理</mark></td><td>运行时</td><td>JDK 动态代理为 Mapper 接口生成代理对象，调用方法时代理拦截转交 MapperMethod 处理，按操作类型路由到 SqlSession 对应方法</td><td>MapperProxy / MapperMethod</td></tr>
+      <tr><td><mark>3. 执行</mark></td><td>运行时</td><td>SqlSession 把任务交给 Executor 执行器（总调度者）</td><td>Executor</td></tr>
+      <tr><td><mark>4. 封装</mark></td><td>运行时</td><td>Executor 协调三个核心 Handler 完成预编译、设参、结果封装</td><td>StatementHandler / ParameterHandler / ResultSetHandler</td></tr>
+    </tbody>
+  </table>
+  <p>三大 Handler 职责：</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>Handler</th><th>职责</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>StatementHandler</mark></td><td>预编译 SQL、创建 Statement</td><td>厨师备锅</td></tr>
+      <tr><td><mark>ParameterHandler</mark></td><td>给 SQL 设置参数</td><td>厨师下料</td></tr>
+      <tr><td><mark>ResultSetHandler</mark></td><td>把查询结果封装成 Java 对象</td><td>厨师装盘上菜</td></tr>
+    </tbody>
+  </table>
+  <p><mark>完整链路</mark>：接口调用 → MapperProxy 拦截 → MapperMethod 路由 → SqlSession 对应方法 → Executor 调度 → StatementHandler 预编译 → ParameterHandler 设参 → 执行 SQL → ResultSetHandler 封装结果 → 返回。</p>
+  <p><span class="supplement">补充：Executor 才是"总调度者"，SqlSession 只是门面（Facade）。Executor 有三种实现：SimpleExecutor（默认，每次新建 Statement）、ReuseExecutor（复用 Statement）、BatchExecutor（批处理）。缓存挂在 Executor 上，不是挂在 SqlSession 上。</span></p>
+
+  <h2>六、一级缓存与二级缓存</h2>
+  <p class="tldr">一级 SqlSession 默认开，二级 Mapper 默认关，查询顺序二→一→库。</p>
+  <p>MyBatis 自带<mark>两级缓存</mark>提速查询。一级默认开，二级默认关。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>对比维度</th><th>一级缓存</th><th>二级缓存</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>作用范围</td><td><mark>SqlSession 级别</mark></td><td><mark>Mapper（namespace）级别</mark></td></tr>
+      <tr><td>默认状态</td><td>默认开启</td><td>默认关闭，需手动开启</td></tr>
+      <tr><td>跨 SqlSession</td><td>互不影响（各自独立）</td><td>跨 SqlSession 共享</td></tr>
+      <tr><td>失效时机</td><td>SqlSession 关闭/commit/rollback/执行 update</td><td>执行该 namespace 的 insert/update/delete</td></tr>
+      <tr><td>存储位置</td><td>Executor 内部 HashMap</td><td>跨 SqlSession 的装饰器层</td></tr>
+      <tr><td>开启方式</td><td>无需配置</td><td><code>&lt;cache/&gt;</code> + 实体类 Serializable</td></tr>
+    </tbody>
+  </table>
+  <p>二级缓存开启：</p>
+  <pre><code>&lt;!-- Mapper.xml 中加一行 --&gt;
+&lt;cache/&gt;
+&lt;!-- 实体类需实现 Serializable --&gt;</code></pre>
+  <p><mark>查询顺序</mark>：二级缓存 → 一级缓存 → 数据库。二级缓存命中直接返回；未命中查一级缓存；仍未命中查数据库，结果回填一级再回填二级。</p>
+  <p><span class="supplement">补充：一级缓存是 SqlSession 级，不同 SqlSession 之间数据互不影响——这就是为什么 A 会话 update 后，B 会话还能查到旧数据（脏读）。二级缓存是 Mapper 级跨会话共享，但只要该 namespace 执行了任意 insert/update/delete，整个 namespace 的二级缓存全部清空（粒度粗，容易误清）。分布式环境下二级缓存不共享，需换 Redis 等分布式缓存。</span></p>
+
+  <h2>七、`#{}` 与 `${}` 的区别</h2>
+  <p class="tldr">#{} 预编译安全传值，${} 拼接用于结构有风险。</p>
+  <p>补充高频考点：两种占位符机制完全不同，用错有 <mark>SQL 注入</mark>风险。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>对比维度</th><th><code>#{}</code></th><th><code>${}</code></th></tr>
+    </thead>
+    <tbody>
+      <tr><td>底层机制</td><td>PreparedStatement 占位符 <code>?</code> + 参数设置</td><td>字符串直接拼接进 SQL</td></tr>
+      <tr><td>SQL 注入</td><td><mark>安全</mark>（预编译转义）</td><td><mark>有注入风险</mark></td></tr>
+      <tr><td>参数类型</td><td>自动类型处理</td><td>纯字符串替换</td></tr>
+      <tr><td>适用场景</td><td>传值（where 条件、insert 值）</td><td>动态表名、列名、排序字段</td></tr>
+      <tr><td>引号</td><td>自动加引号</td><td>不加引号</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：#{}` 是预编译占位符（?），安全但不能用于表名/列名/ORDER BY 字段（预编译不支持结构化元素）；${} 是字符串拼接，能用于动态表名/列名但有注入风险，必须先校验白名单再用。日常传值一律用 #{}，只有动态表名/排序字段才用 ${} 且要严格校验。</span></p>
+
+  <h2>八、面试串联话术</h2>
+  <p class="tldr">映射→批量→主键→四环节→缓存一气呵成。</p>
+  <blockquote>
+    <p>字段名与属性名不一致：方式 1 SQL 别名、方式 2 resultMap，优先 resultMap 解耦可复用。结果封装靠 ResultSetHandler 按 resultMap 用反射创建对象、用反射给属性赋值。</p>
+    <p>批量插入用 foreach 遍历 list，item 取元素，separator 逗号拼单条多行 VALUES（推荐）。主键回填：自增用 useGeneratedKeys + keyProperty，非自增用 selectKey。</p>
+    <p>运行四环节：解析（XMLConfigBuilder → Configuration）→ 代理（MapperProxy → MapperMethod 路由）→ 执行（Executor 总调度）→ 封装（StatementHandler 预编译、ParameterHandler 设参、ResultSetHandler 封装结果）。</p>
+    <p>缓存：一级 SqlSession 级默认开（跨会话互不影响），二级 Mapper 级默认关（跨会话共享，namespace 任意更新全清空）；查询顺序二→一→库。#{} 预编译安全传值，${} 拼接用于动态表名/列名需白名单校验。</p>
+  </blockquote>
+
+  <script type="text/template" id="mindmap-mybatis">
+# MyBatis运行原理与缓存机制
+## 字段映射resultMap
+### 方式1 SQL别名
+### 方式2 resultMap映射
+### 优先用resultMap解耦
+## 结果封装反射
+### ResultSetHandler读映射
+### 反射创建对象
+### 反射给属性赋值
+### 关联对象递归封装
+## 批量插入foreach
+### collection list
+### item取元素
+### separator逗号拼VALUES
+### 单条多行推荐
+## 主键回填
+### useGeneratedKeys自增
+### keyProperty回填属性
+### selectKey非自增
+## 运行四环节
+### 解析XMLConfigBuilder
+### Configuration全局对象
+### 代理MapperProxy
+### MapperMethod路由
+### Executor总调度
+### StatementHandler预编译
+### ParameterHandler设参
+### ResultSetHandler封装
+## 一二级缓存
+### 一级SqlSession默认开
+### 二级Mapper默认关
+### 跨会话互不影响
+### namespace更新全清空
+### 查询顺序二一库
+## 占位符区别
+### #{}预编译安全
+### ${}拼接有风险
+### 动态表名用${}
+### 白名单校验
+  </script>
+</section>

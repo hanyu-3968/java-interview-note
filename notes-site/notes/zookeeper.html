@@ -1,0 +1,178 @@
+<section class="note" data-note-id="zookeeper" data-note-title="ZooKeeper：ZAB协议、Watch与分布式锁">
+  <p class="tldr">CP 协调·ZAB 广播·Watch 一次性·临时顺序锁</p>
+
+  <h2>一、ZooKeeper 是什么：CP 型协调服务</h2>
+  <p class="tldr">CP 协调服务，树形 Znode，牺牲可用性换强一致</p>
+  <p><mark>ZooKeeper</mark> 是开源的分布式协调服务，本质是高性能高可用的分布式数据一致性解决方案，提供类似文件系统的树形 <mark>Znode</mark> 数据结构。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>定位</td><td>分布式协调服务，提供配置/命名/状态共享与同步</td></tr>
+      <tr><td>数据结构</td><td>类文件系统的树形 Znode，每个节点存数据</td></tr>
+      <tr><td>一致性模型</td><td><mark>CP</mark>——一致性 + 分区容错，牺牲一定可用性保强一致</td></tr>
+      <tr><td>典型用途</td><td>服务注册发现、配置中心、分布式锁、集群选主、命名服务</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：ZK 是 CP 不是 AP，分区发生时少数派分区会停止服务以保证强一致，不适合做超高并发写入的主存储，和 Eureka/Nacos（AP 优先）的取舍相反。</span></p>
+
+  <h2>二、ZAB 协议：Leader/Follower/Observer 与原子广播</h2>
+  <p class="tldr">Leader 唯一写广播，Follower 读+投票，Observer 读不投票</p>
+  <p><mark>ZAB</mark>（ZooKeeper Atomic Broadcast）原子广播协议靠 Leader 唯一处理写、Follower 投票确认、Observer 只读不投票，保证全局顺序一致。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>角色</th><th>职责</th><th>是否投票</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>Leader</mark></td><td>处理所有写请求，广播提案给 Followers，集群仅一个</td><td>是（发起提案）</td></tr>
+      <tr><td><mark>Follower</mark></td><td>处理读请求，接收提案并写入本地，参与选举和投票</td><td>是</td></tr>
+      <tr><td><mark>Observer</mark></td><td>处理读请求，不参与投票，用于提升读性能不增加写压力</td><td>否</td></tr>
+    </tbody>
+  </table>
+  <p>读写流程：</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>流程</th><th>步骤</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>写流程</td><td>客户端连任一节点 → 转发给 Leader → Leader 发 Proposal → Follower 投票 → <mark>超半数 ACK</mark> → Leader Commit → 通知所有节点更新</td></tr>
+      <tr><td>读流程</td><td>任意节点直接返回本地副本数据</td></tr>
+      <tr><td>一致性</td><td>保证<mark>顺序一致性</mark>，但非实时强一致（默认读本地副本，可能略滞后）</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：ZAB 不是 Paxos——ZAB 为 ZK 主备模式量身定制，强调"Leader 唯一写 + 过半 ACK + 全局顺序"；Paxos 是通用一致性算法，没有"唯一 Leader"假设。ZAB 借鉴了 Paxos 的过半思想但不是 Paxos。</span></p>
+  <p><span class="supplement">补充：Observer 不参与投票但仍同步数据——它接收 Leader 提案并写入本地，只是不参与"过半 ACK"计数，目的是横向扩展读吞吐而不拖慢写，不是"不同步数据的纯缓存"。</span></p>
+
+  <h2>三、ZXID：事务 ID 的 Epoch + 序号</h2>
+  <p class="tldr">ZXID = Epoch 任期 + Counter 序号，先比任期再比序号</p>
+  <p>每个写操作有唯一 <mark>ZXID</mark>，高 32 位是领导任期 <mark>Epoch</mark>，低 32 位是操作序号 <mark>Counter</mark>，保证全局有序。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>字段</th><th>位数</th><th>含义</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>高 32 位</td><td>Epoch</td><td>Leader 的任期编号，每次选举新 Leader 自增</td></tr>
+      <tr><td>低 32 位</td><td>Counter</td><td>该任期内操作的递增序号</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：ZXID 的 Epoch 不是"时间戳"——是逻辑任期号，每次 Leader 切换才 +1，和真实时间无关。新 Leader 上任后旧 Leader 的未提交提案都会被丢弃，因为新 Epoch 比旧的大。ZXID 比大小 = 先比 Epoch 再比 Counter，这是 ZAB 恢复阶段判断提案有效性的依据。</span></p>
+
+  <h2>四、Watch 机制：一次性触发的异步通知</h2>
+  <p class="tldr">注册建映射，写后查表推，一次性触发，要持续就重注册</p>
+  <p><mark>Watch</mark> 是基于客户端会话的一次性回调，服务端只维护"节点路径 → SessionID"映射，节点变更时仅向注册会话推送，通知后映射立即删除。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>阶段</th><th>动作</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>注册</td><td>客户端通过 <code>getData</code>/<code>exists</code>/<code>getChildren</code> 注册 Watch，服务端在内存维护"路径 → SessionID"映射表</td></tr>
+      <tr><td>触发</td><td>其他客户端修改该节点，服务端完成写事务后查映射表，只向注册过的会话发事件通知</td></tr>
+      <tr><td>推送范围</td><td>只有注册过该节点 Watch 的会话收到，没注册的不收；A/B/C 都注册则都收</td></tr>
+      <tr><td>致命特点</td><td><mark>一次性触发</mark>（One-time Trigger），通知发出后映射关系立即删除，需持续监听要在回调里重新注册</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：Watch 是一次性不是持续监听——收到一次通知后监听就失效，想继续监听同一节点必须在回调方法里重新注册 Watch，否则会漏掉后续变更。生产中常因忘记重注册导致状态丢失，可用 Curator 的 TreeCache/PathChildrenCache 封装自动重注册。</span></p>
+  <p><span class="supplement">补充：Watch 是服务端推送不是客户端轮询——客户端不需定时查节点变没变，服务端在写事务完成后主动推送给注册会话；且只向注册会话推送，不广播给整个集群。</span></p>
+
+  <h2>五、分布式锁：临时顺序节点 + Watch 前驱</h2>
+  <p class="tldr">临时顺序节点排队，最小者持锁，Watch 前驱，无羊群效应</p>
+  <p>ZK 用<mark>临时顺序节点</mark>实现分布式锁，客户端在 <code>/lock</code> 下创建自己的顺序节点，判断是否最小节点决定持锁，否则只 Watch 前一个节点，天然规避<mark>羊群效应</mark>。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>步骤</th><th>动作</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>① 建锁根</td><td>创建持久节点 <code>/lock</code> 作为锁根</td></tr>
+      <tr><td>② 加锁</td><td>客户端在 <code>/lock</code> 下创建临时顺序节点 <code>EPHEMERAL_SEQUENTIAL</code>，如 <code>/lock/lock-000000001</code></td></tr>
+      <tr><td>③ 判断</td><td>获取 <code>/lock</code> 所有子节点排序，判断自己是否最小序号（序号 0）</td></tr>
+      <tr><td>④ 持锁/等待</td><td>是最小 → 获取锁成功执行业务；否 → Watch 前一个序号节点的删除事件，进入等待</td></tr>
+      <tr><td>⑤ 释放</td><td>业务完成主动 <code>delete</code> 自己的节点，或客户端会话断开临时节点自动删除</td></tr>
+      <tr><td>⑥ 唤醒</td><td>下一个节点收到 Watch 通知，重复加锁流程</td></tr>
+    </tbody>
+  </table>
+  <p>ZK 锁 vs Redis 锁对比：</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>ZK 锁</th><th>Redis 锁</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>超时设置</td><td>无需设置，临时节点会话断开自动删除</td><td>必须设过期时间防死锁</td></tr>
+      <tr><td>死锁风险</td><td>客户端崩溃临时节点自动删，天然无死锁</td><td>锁过期+看门狗续期，仍有边界风险</td></tr>
+      <tr><td>羊群效应</td><td>只 Watch 前驱节点，唤醒一个等待者</td><td><code>setNx</code> 无排队，可能多客户端争抢</td></tr>
+      <tr><td>吞吐量</td><td>低，每次创建节点要持久化到磁盘</td><td>高，纯内存操作</td></tr>
+      <tr><td>适用场景</td><td>一致性要求高、并发量适中</td><td>高并发、容忍极小概率不一致</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：羊群效应是 ZK 锁要规避的核心问题——若所有等待者都 Watch 同一个节点（如锁根 /lock），锁释放时所有客户端被唤醒争抢，服务端压力陡增。ZK 锁解法是每个等待者只 Watch 前一个序号节点，删除时只唤醒一个后继者，形成"排队链"。</span></p>
+  <p><span class="supplement">补充：临时节点 vs 持久节点——锁根 /lock 是持久节点（客户端断开不删），每个客户端创建的 lock-000xxx 是临时顺序节点（会话断开自动删）。别把锁根也建成临时节点，否则第一个客户端断开锁根就没了。</span></p>
+
+  <h2>六、五大应用场景：注册·配置·锁·选主·命名</h2>
+  <p class="tldr">注册·配置·锁·选主·命名，强一致用 ZK，丰富功能用 Nacos/Apollo</p>
+  <p>ZK 靠树形 Znode + 临时节点 + Watch 支撑五大经典场景，微服务里多被 Nacos/Apollo 替代但底层强一致时仍是好选择。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>场景</th><th>实现方式</th><th>典型案例</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>服务注册发现</mark></td><td>服务启动在 <code>/services</code> 下建临时节点，下线自动删，消费者 Watch 该路径拿实时列表</td><td>Dubbo 旧版、Spring Cloud ZK（现多用 Nacos）</td></tr>
+      <tr><td><mark>配置中心</mark></td><td>配置项存 ZK 节点，客户端 Watch 节点实现动态刷新</td><td>Apollo/Nacos 原理类似</td></tr>
+      <tr><td><mark>分布式锁</mark></td><td>临时顺序节点 + Watch 前驱节点</td><td>—</td></tr>
+      <tr><td><mark>集群选主</mark></td><td>多候选者在 <code>/master</code> 下抢建临时节点，谁建成功谁是 Leader，Leader 挂了节点删除触发重新选举</td><td>Kafka 旧版依赖 ZK</td></tr>
+      <tr><td><mark>命名服务</mark></td><td>利用树形结构生成全局唯一 ID，如订单号、分布式 ID</td><td>分布式 ID 生成</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：ZK 选主 ≠ ZAB 的 Leader 选举——ZAB Leader 选举是 ZK 集群自身协调机制（选 ZK 自己的 Leader）；"集群选主"应用场景是业务层利用 ZK 临时节点抢建机制选业务主节点（如 Kafka Controller 选举）。两者都叫"选主"但作用层不同。</span></p>
+  <p><span class="supplement">补充：ZK 配置中心 vs Apollo/Nacos——ZK 能做配置中心但不是强项（Watch 一次性需重注册、无配置版本管理）；Apollo/Nacos 功能更丰富（版本回滚、灰度发布、配置审计）。ZK 适合"强一致 + 简单配置"，复杂配置管理用 Apollo/Nacos。</span></p>
+
+  <h2>面试回答模板</h2>
+  <blockquote>
+    <p>问题本质是：ZooKeeper 是一个 CP 型分布式协调中间件，基于 ZAB 协议实现 Leader 选举和原子广播，保证数据强一致，牺牲一定可用性。</p>
+    <p>机制是：Watch 是基于客户端会话的一次性推送，服务端只维护"节点路径 → SessionID"映射，节点变更时仅向对应会话发通知不广播集群，每次通知后需重新注册；分布式锁用临时顺序节点，客户端在锁路径下创建顺序节点，判断是否最小节点决定持锁，未持有则只 Watch 前一个节点，避免羊群效应，客户端崩溃临时节点自动删除锁自动释放。</p>
+    <p>实战中我会：微服务里服务注册发现和配置管理优先用 Nacos/Apollo（功能更丰富），但底层要保证强一致的场景（集群选主、分布式锁、分布式 ID）仍用 ZK；相比 Redis 锁，ZK 锁不需设超时、临时节点天然解决死锁、Watch 前驱避免羊群效应，但吞吐量低（每次创建节点要持久化到磁盘），适合一致性要求高、并发量适中的场景。</p>
+  </blockquote>
+
+  <h2>最后复习：闭眼回忆 8 句</h2>
+  <ol>
+    <li>ZK 是 CP 型分布式协调服务，树形 Znode，牺牲可用性换强一致。</li>
+    <li>ZAB 协议：Leader 唯一处理写并广播，Follower 读+投票，Observer 读不投票。</li>
+    <li>写流程：转发 Leader → Proposal → Follower 投票 → 过半 ACK → Commit → 通知所有节点。</li>
+    <li>ZXID = 高 32 位 Epoch（任期）+ 低 32 位 Counter（序号），先比任期再比序号。</li>
+    <li>Watch 是一次性触发，服务端维护"路径 → SessionID"映射，通知后立即删除，要持续监听需重注册。</li>
+    <li>分布式锁：临时顺序节点排队，最小者持锁，否则只 Watch 前驱，会话断开自动释放，无羊群效应。</li>
+    <li>ZK 锁 vs Redis 锁：ZK 无需超时、无死锁、无羊群效应但吞吐低；Redis 快但需过期时间+看门狗。</li>
+    <li>五大场景：服务注册发现、配置中心、分布式锁、集群选主、命名服务；强一致用 ZK，丰富功能用 Nacos/Apollo。</li>
+  </ol>
+
+  <script type="text/template" id="mindmap-zookeeper">
+# ZooKeeper：ZAB协议、Watch与分布式锁
+## ZAB 协议
+### Leader 唯一写广播
+### Follower 读+投票
+### Observer 读不投票
+### 写流程 过半 ACK Commit
+### 顺序一致性 非实时强一致
+## ZXID 事务 ID
+### 高 32 位 Epoch 任期
+### 低 32 位 Counter 序号
+### 先比任期再比序号
+## Watch 机制
+### 注册 路径→SessionID 映射
+### 触发 写后查表推送
+### 一次性触发 需重注册
+### 服务端推送 非轮询 非广播
+## 分布式锁
+### 临时顺序节点排队
+### 最小者持锁
+### 否则 Watch 前驱
+### 释放 删除或会话断开
+### 无羊群效应
+### vs Redis 锁 无超时无死锁吞吐低
+## 五大应用场景
+### 服务注册发现 临时节点
+### 配置中心 Watch 节点
+### 分布式锁 临时顺序节点
+### 集群选主 抢建 /master
+### 命名服务 全局唯一 ID
+  </script>
+</section>

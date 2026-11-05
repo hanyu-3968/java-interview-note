@@ -1,0 +1,317 @@
+[
+  {
+    "id": "jvm-tools",
+    "title": "JVM工具与微服务全链路排障",
+    "category": "JVM",
+    "cover": "assets/images/jvm-tools/cover.webp",
+    "tags": ["JVM", "排障", "jstat", "jstack", "jmap", "MAT", "Arthas", "微服务"],
+    "summary": "jstat/jstack/jmap/MAT 四大排障工具 + Arthas 在线诊断，串联 Apollo、Docker/K8s、Nginx/Tomcat/Netty、Janus 监控的微服务全链路排障体系。",
+    "file": "notes/jvm-tools.html"
+  },
+  {
+    "id": "jvm-gc",
+    "title": "JVM垃圾回收核心体系",
+    "category": "JVM",
+    "cover": "assets/images/jvm-gc/cover.webp",
+    "tags": ["JVM", "垃圾回收", "GC", "可达性分析", "G1", "ZGC", "分代收集"],
+    "summary": "可达性分析判存活 → 四种回收算法对比 → 分代回收 7 步流程 → Serial/Parallel/CMS/G1/ZGC 收集器选型，含面试串联话术。",
+    "file": "notes/jvm-gc.html"
+  },
+  {
+    "id": "jvm-tuning",
+    "title": "JVM调优与CPU飙升定位",
+    "category": "JVM",
+    "cover": "assets/images/jvm-tuning/cover.webp",
+    "tags": ["JVM", "调优", "CPU飙升", "top", "jstack", "内存模型", "元空间"],
+    "summary": "CPU 飙升 5 大元凶（码线多外配）+ 5 步定位法（进线转栈判）+ JVM 参数调优 + GC 现象猜根因 + JVM 内存模型演进。",
+    "file": "notes/jvm-tuning.html"
+  },
+  {
+    "id": "jvm-interview",
+    "title": "JVM面试深度追问",
+    "category": "JVM",
+    "cover": "assets/images/jvm-interview/cover.webp",
+    "tags": ["JVM", "G1", "ZGC", "对象晋升", "逃逸分析", "OOM", "MAT", "Arthas"],
+    "summary": "G1 Region 分区 + ZGC 染色指针读屏障 + 对象晋升 4 种情况 + JIT 逃逸分析 + OOM 四类定位 + MAT 四步 + 收集器选型。",
+    "file": "notes/jvm-interview.html"
+  },
+  {
+    "id": "kafka",
+    "title": "Kafka架构与消息可靠性",
+    "category": "消息队列",
+    "cover": "assets/images/kafka/cover.webp",
+    "tags": ["Kafka", "消息队列", "Partition", "ISR", "acks", "幂等性", "顺序性", "KRaft"],
+    "summary": "7 大核心组件 + ACK 机制 + 三端全链路防丢失 + 幂等性防重复 + 分区有序 + Leader 选举（ZK/KRaft）+ 日志收集场景。",
+    "file": "notes/kafka.html"
+  },
+  {
+    "id": "rocketmq",
+    "title": "RocketMQ架构与金融级可靠性",
+    "category": "消息队列",
+    "cover": "assets/images/rocketmq/cover.webp",
+    "tags": ["RocketMQ", "消息队列", "事务消息", "顺序消息", "同步刷盘", "死信队列", "零拷贝", "CommitLog"],
+    "summary": "NameServer 轻量路由 + Broker CommitLog 顺序写 + 事务消息两阶段提交 + 顺序性分区有序 + 与 Kafka 对比 + 性能三大支柱 + 消息堆积处理。",
+    "file": "notes/rocketmq.html"
+  },
+  {
+    "id": "jvm-classloader",
+    "title": "JVM类加载与双亲委派",
+    "category": "JVM",
+    "cover": "assets/images/jvm-classloader/cover.webp",
+    "tags": ["JVM", "类加载", "双亲委派", "BootstrapClassLoader", "SPI", "Tomcat", "热部署"],
+    "summary": "4 层类加载器 + 双亲委派机制（loadClass 四步）+ 资源加载委派流程 + 类加载时机 + 打破双亲委派（SPI/Tomcat/热部署/OSGi）。",
+    "file": "notes/jvm-classloader.html"
+  },
+  {
+    "id": "spring",
+    "title": "Spring核心知识点",
+    "category": "Spring",
+    "cover": "assets/images/spring/cover.webp",
+    "tags": ["Spring", "ApplicationListener", "BeanPostProcessor", "事务传播", "循环依赖", "三级缓存", "自动配置"],
+    "summary": "事件驱动解耦 + Bean 扩展点三剑客 + 事务传播/隔离级别 + 三级缓存解循环依赖 + Spring Boot 自动配置原理。",
+    "file": "notes/spring.html"
+  },
+  {
+    "id": "concurrent",
+    "title": "并发编程与异步工具",
+    "category": "Java并发",
+    "cover": "assets/images/concurrent/cover.webp",
+    "tags": ["并发", "ConcurrentHashMap", "CopyOnWriteArrayList", "BlockingQueue", "ForkJoinPool", "CompletableFuture"],
+    "summary": "5 大并发集合选型 + ForkJoinPool 工作窃取（CPU 密集型）+ FutureTask 痛点 + CompletableFuture 全能工具箱（回调驱动/链式编排/多任务组合）。",
+    "file": "notes/concurrent.html"
+  },
+  {
+    "id": "collections",
+    "title": "Java集合核心知识点",
+    "category": "Java基础",
+    "cover": "assets/images/collections/cover.webp",
+    "tags": ["集合", "HashMap", "Hashtable", "ArrayList", "LinkedList", "HashSet", "ConcurrentHashMap"],
+    "summary": "HashMap vs Hashtable + put 三步流程 + ArrayList/LinkedList 对比（含踩坑细节）+ HashSet 基于 HashMap + ConcurrentHashMap 1.7/1.8 演进。",
+    "file": "notes/collections.html"
+  },
+  {
+    "id": "java-basics",
+    "title": "Java基础：equals/hashCode、反射、泛型与动态代理",
+    "category": "Java基础",
+    "cover": "assets/images/java-basics/cover.webp",
+    "tags": ["Java基础", "equals", "hashCode", "反射", "泛型擦除", "JDK动态代理", "CGLIB"],
+    "summary": "equals/hashCode 协同（重写 equals 必重写 hashCode）+ 反射三阶段 + 泛型编译时检查编译后擦除 + JDK 动态代理为什么必须接口。",
+    "file": "notes/java-basics.html"
+  },
+  {
+    "id": "thread-pool",
+    "title": "线程池：参数配置与阻塞队列设计",
+    "category": "Java并发",
+    "cover": "assets/images/thread-pool/cover.webp",
+    "tags": ["线程池", "7大参数", "拒绝策略", "阻塞队列", "有界队列", "CallerRunsPolicy", "先队列后扩线程"],
+    "summary": "7 大参数 + 先队列后扩线程设计（线程昂贵队列廉价）+ 4 种拒绝策略 + 无界队列的坑 + CallerRunsPolicy 反压。",
+    "file": "notes/thread-pool.html"
+  },
+  {
+    "id": "springboot",
+    "title": "SpringBoot：启动流程与自动装配原理",
+    "category": "Spring",
+    "cover": "assets/images/springboot/cover.webp",
+    "tags": ["SpringBoot", "自动装配", "EnableAutoConfiguration", "SpringFactoriesLoader", "Conditional", "内嵌Tomcat", "启动流程"],
+    "summary": "SpringApplication.run 启动流程 + @EnableAutoConfiguration 自动装配六步 + SpringBoot 五大特性。",
+    "file": "notes/springboot.html"
+  },
+  {
+    "id": "mysql-index",
+    "title": "MySQL索引：设计原则与失效场景",
+    "category": "数据库",
+    "cover": "assets/images/mysql-index/cover.webp",
+    "tags": ["MySQL", "索引", "最左前缀", "覆盖索引", "索引失效", "EXPLAIN", "区分度", "B+树"],
+    "summary": "索引设计五大原则（选择性/最左前缀/覆盖索引/控制数量/避失效）+ 索引失效七大场景 + B+树三层两千万 + EXPLAIN 验证。",
+    "file": "notes/mysql-index.html"
+  },
+  {
+    "id": "lock-mechanism",
+    "title": "锁机制：synchronized锁升级与MySQL锁",
+    "category": "Java并发",
+    "cover": "assets/images/lock-mechanism/cover.webp",
+    "tags": ["synchronized", "锁升级", "偏向锁", "自旋锁", "ReentrantLock", "AQS", "MySQL锁", "公平锁", "悲观锁"],
+    "summary": "synchronized Monitor 原理 + 锁升级四阶段（无锁→偏向→轻量级→重量级）+ MySQL 行锁/表锁/悲观乐观锁 + ReentrantLock 与 AQS。",
+    "file": "notes/lock-mechanism.html"
+  },
+  {
+    "id": "redis",
+    "title": "Redis：分布式锁、持久化与缓存三大问题",
+    "category": "中间件",
+    "cover": "assets/images/redis/cover.webp",
+    "tags": ["Redis", "分布式锁", "Redisson", "看门狗", "RDB", "AOF", "缓存穿透", "缓存击穿", "缓存雪崩", "哨兵"],
+    "summary": "Jedis vs Redisson + setNx 四大问题与看门狗 + RDB/AOF 持久化 + 缓存穿透/击穿/雪崩 + 过期策略 + 主从复制与哨兵。",
+    "file": "notes/redis.html"
+  },
+  {
+    "id": "threadlocal-cas",
+    "title": "多线程：强软弱虚引用、ThreadLocal与CAS",
+    "category": "Java并发",
+    "cover": "assets/images/threadlocal-cas/cover.webp",
+    "tags": ["多线程", "强软弱虚", "软引用", "弱引用", "虚引用", "ThreadLocal", "内存泄漏", "CAS", "ABA", "AtomicStampedReference"],
+    "summary": "强软弱虚四种引用 + ThreadLocal 原理与 value 内存泄漏 + CAS 原理（cmpxchg 指令）与 ABA 问题 + 连接池性能对比。",
+    "file": "notes/threadlocal-cas.html"
+  },
+  {
+    "id": "security",
+    "title": "安全：加密算法、防火墙与DDoS防御",
+    "category": "安全",
+    "cover": "assets/images/security/cover.webp",
+    "tags": ["安全", "加密", "AES", "RSA", "MD5", "SM4", "防火墙", "DDoS", "SYN洪水", "HTTPS"],
+    "summary": "6 大加密算法（DES/3DES/AES/MD5/RSA/SM4）+ 对称 vs 非对称 + 防火墙三大功能 + DDoS SYN 洪水攻击防御。",
+    "file": "notes/security.html"
+  },
+  {
+    "id": "linux",
+    "title": "Linux：常用命令与日志排查实战",
+    "category": "运维",
+    "cover": "assets/images/linux/cover.webp",
+    "tags": ["Linux", "命令", "tail", "grep", "sed", "less", "chmod", "vim", "日志排查", "netstat"],
+    "summary": "常用命令（进程/防火墙/端口/软件）+ 常见目录 + 6 大查日志技巧（tail/grep -C/sed/less/zgrep）+ 文件操作 + chmod 授权。",
+    "file": "notes/linux.html"
+  },
+  {
+    "id": "mybatis",
+    "title": "MyBatis：运行原理与缓存机制",
+    "category": "框架",
+    "cover": "assets/images/mybatis/cover.webp",
+    "tags": ["MyBatis", "resultMap", "动态代理", "Executor", "StatementHandler", "一级缓存", "二级缓存", "批量插入"],
+    "summary": "运行四环节（解析/代理/执行/封装）+ resultMap 映射 + 批量插入 + 主键回填 + 一二级缓存 + #{}与${}区别。",
+    "file": "notes/mybatis.html"
+  },
+  {
+    "id": "oceanbase",
+    "title": "OceanBase：原生分布式数据库与MySQL迁移",
+    "category": "数据库",
+    "cover": "assets/images/oceanbase/cover.webp",
+    "tags": ["OceanBase", "分布式数据库", "Paxos", "LSM-Tree", "HTAP", "多租户", "OMS", "RPO=0", "RTO", "Shared-Nothing"],
+    "summary": "单机分布式一体化架构 + 三大组件（OBServer/Zone/Tenant）+ Paxos 强一致 + LSM-Tree 存储 + vs MySQL + OMS 迁移四阶段。",
+    "file": "notes/oceanbase.html"
+  },
+  {
+    "id": "file-storage",
+    "title": "文件存储：OSS/FastDFS/MinIO与Elasticsearch",
+    "category": "中间件",
+    "cover": "assets/images/file-storage/cover.webp",
+    "tags": ["OSS", "FastDFS", "MinIO", "Elasticsearch", "对象存储", "文件存储", "倒排索引", "CDN", "信贷选型"],
+    "summary": "FastDFS/OSS/MinIO 三种文件存储对比 + Elasticsearch 搜索引擎核心组件 + 信贷场景选型（OSS+ES+MySQL 组合）。",
+    "file": "notes/file-storage.html"
+  },
+  {
+    "id": "mongodb",
+    "title": "MongoDB：文档型NoSQL与ES对比",
+    "category": "数据库",
+    "cover": "assets/images/mongodb/cover.webp",
+    "tags": ["MongoDB", "NoSQL", "BSON", "文档型数据库", "分片", "聚合管道", "B+树", "Spring Data MongoDB", "Collection"],
+    "summary": "文档型 NoSQL + BSON 存储 + 无 Schema 灵活模型 + B+树索引 + vs MySQL/ES 对比 + Spring Data MongoDB 用法。",
+    "file": "notes/mongodb.html"
+  },
+  {
+    "id": "spring-cloud",
+    "title": "SpringCloud：微服务治理全家桶",
+    "category": "Spring",
+    "cover": "assets/images/spring-cloud/cover.webp",
+    "tags": ["SpringCloud", "Eureka", "Consul", "OpenFeign", "Hystrix", "Sentinel", "SpringCloudGateway", "熔断降级", "微服务"],
+    "summary": "微服务治理全家桶 + Eureka/Consul 注册中心对比 + OpenFeign 声明式调用 + Hystrix 四大容错机制（隔离/熔断/降级/缓存）+ 网关选型。",
+    "file": "notes/spring-cloud.html"
+  },
+  {
+    "id": "cs-fundamentals",
+    "title": "计算机基础：数据结构、JVM、网络与文件系统",
+    "category": "计算机基础",
+    "cover": "assets/images/cs-fundamentals/cover.webp",
+    "tags": ["计算机基础", "数据结构", "数组", "链表", "Hash表", "树", "JVM", "TCP", "CDN", "DNS", "文件系统"],
+    "summary": "计算机原理 + 数据结构（线性表/Hash/树）+ JVM 运行流程 + 网络编程（DNS/CDN/TCP/LB）+ 文件系统与 Inode。",
+    "file": "notes/cs-fundamentals.html"
+  },
+  {
+    "id": "biz-pitfalls",
+    "title": "业务开发常见错误：线程安全、加锁、HTTP与事务",
+    "category": "实战",
+    "cover": "assets/images/biz-pitfalls/cover.webp",
+    "tags": ["ThreadLocal", "ConcurrentHashMap", "锁粒度", "公平锁", "Feign", "超时重试", "Transactional", "事务失效", "线程池复用"],
+    "summary": "ThreadLocal 未 remove + ConcurrentHashMap 批量非原子 + 锁粒度与公平锁坑 + Feign 超时重试坑 + @Transactional 失效四场景。",
+    "file": "notes/biz-pitfalls.html"
+  },
+  {
+    "id": "network",
+    "title": "网络传输：TCP/UDP、握手挥手与跨域",
+    "category": "网络",
+    "cover": "assets/images/network/cover.webp",
+    "tags": ["TCP", "UDP", "三次握手", "四次挥手", "滑动窗口", "跨域", "CORS", "DNS", "HTTP", "TIME_WAIT"],
+    "summary": "TCP vs UDP + 三次握手四次挥手 + TCP 可靠性三机制（序号确认/重排去重/滑动窗口）+ 跨域网关层解决 + 浏览器输入 URL 全流程。",
+    "file": "notes/network.html"
+  },
+  {
+    "id": "mysql",
+    "title": "MySQL核心：InnoDB、B+树、MVCC与2PC",
+    "category": "数据库",
+    "cover": "assets/images/mysql/cover.webp",
+    "tags": ["MySQL", "InnoDB", "B+树", "聚簇索引", "MVCC", "Redo Log", "Undo Log", "2PC", "隔离级别", "索引优化", "范式"],
+    "summary": "InnoDB vs MyISAM + B+树聚簇/二级索引 + Redo/Undo + MVCC 四级隔离 + 2PC 与 XA 对账 + SQL 执行流程 + 范式 + 索引优化。",
+    "file": "notes/mysql.html"
+  },
+  {
+    "id": "architecture",
+    "title": "架构设计：DDD与扩展策略",
+    "category": "架构",
+    "cover": "assets/images/architecture/cover.webp",
+    "tags": ["DDD", "领域驱动设计", "贫血模型", "充血模型", "垂直扩展", "水平扩展", "聚合根", "限界上下文", "架构演进"],
+    "summary": "DDD 领域驱动设计流程 + 核心概念（领域/限界上下文/聚合根）+ 贫血/充血模型对比 + 垂直 vs 水平扩展 + 架构演进四阶段。",
+    "file": "notes/architecture.html"
+  },
+  {
+    "id": "cloud-native",
+    "title": "云原生：Docker、K8s与Serverless",
+    "category": "云原生",
+    "cover": "assets/images/cloud-native/cover.webp",
+    "tags": ["云原生", "Docker", "Kubernetes", "Serverless", "混合云", "容器化", "镜像瘦身", "声明式API", "微服务"],
+    "summary": "Docker 容器化 + K8s 编排 + Serverless 执行模型 + 云原生启动优化三招 + 混合云选型 + 云原生方法论。",
+    "file": "notes/cloud-native.html"
+  },
+  {
+    "id": "zookeeper",
+    "title": "ZooKeeper：ZAB协议、Watch与分布式锁",
+    "category": "中间件",
+    "cover": "assets/images/zookeeper/cover.webp",
+    "tags": ["ZooKeeper", "ZAB协议", "分布式协调", "Watch", "分布式锁", "临时顺序节点", "Leader选举", "ZXID", "CP系统"],
+    "summary": "CP 型分布式协调服务 + ZAB 协议（Leader/Follower/Observer）+ Watch 一次性通知 + 临时顺序节点分布式锁 + 五大应用场景。",
+    "file": "notes/zookeeper.html"
+  },
+  {
+    "id": "demo-design-patterns",
+    "title": "设计模式与AOP代理：从单例到动态代理",
+    "category": "项目Demo",
+    "cover": "assets/images/demo-design-patterns/cover.webp",
+    "tags": ["设计模式", "单例", "工厂", "建造者", "适配器", "观察者", "生产者消费者", "迭代器", "动态代理", "JDK代理", "CGLIB", "Spring AOP"],
+    "summary": "单例5种写法演进 + 工厂/建造者/适配器/观察者/生产者消费者/迭代器7大模式 + JDK动态代理 vs CGLIB代理对比 + Spring AOP选型机制。",
+    "file": "notes/demo-design-patterns.html"
+  },
+  {
+    "id": "demo-framework-handwrite",
+    "title": "框架手写实现与规则引擎：Spring IOC到Drools",
+    "category": "项目Demo",
+    "cover": "assets/images/demo-framework-handwrite/cover.webp",
+    "tags": ["Spring IOC", "手写框架", "JdbcTemplate", "MyBatis", "Drools", "规则引擎", "动态加载", "KieContainer", "热更新", "BeanDefinition"],
+    "summary": "手写Spring IOC（XML解析+反射创建Bean）+ JdbcTemplate模板方法 + MyBatis三层架构 + Drools规则引擎动态加载实现规则热更新。",
+    "file": "notes/demo-framework-handwrite.html"
+  },
+  {
+    "id": "demo-concurrent-crypto",
+    "title": "并发编程与加密工具：CompletableFuture到RSA",
+    "category": "项目Demo",
+    "cover": "assets/images/demo-concurrent-crypto/cover.webp",
+    "tags": ["CompletableFuture", "ForkJoinPool", "ConcurrentHashMap", "CopyOnWriteArrayList", "LinkedBlockingQueue", "MD5", "3DES", "RSA", "加密", "异步编排"],
+    "summary": "FutureTask痛点 + CompletableFuture链式编排 + ForkJoinPool工作窃取 + 并发集合选型 + 阻塞队列 + MD5/3DES/RSA三类加密工具实战。",
+    "file": "notes/demo-concurrent-crypto.html"
+  },
+  {
+    "id": "ai-demo-summary",
+    "title": "AI学习Demo项目总结：LangChain Agent全栈实战",
+    "category": "AI",
+    "cover": "assets/images/ai-demo-summary/cover.webp",
+    "tags": ["LangChain", "Agent", "create_agent", "Function Calling", "RAG", "Tools", "bind_tools", "checkpointer", "mock_llm", "new-api网关", "Python基础"],
+    "summary": "四个目录总览 + demo项目完整Agent实战（网关+双stream_mode+AST白名单计算器）+ LangChain六大概念 + Agent三档对比 + Tools四要素 + RAG切分嵌入 + 10道面试问答 + 10个记忆锚点。",
+    "file": "notes/ai-demo-summary.html"
+  }
+]

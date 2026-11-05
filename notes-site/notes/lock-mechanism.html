@@ -1,0 +1,274 @@
+<section class="note" data-note-id="lock-mechanism" data-note-title="锁机制：synchronized锁升级与MySQL锁">
+
+  <p class="tldr">synchronized 锁升级四阶段 + MySQL 行表锁 + ReentrantLock AQS。</p>
+
+  <h2>一、synchronized 原理：Monitor 是底层基石</h2>
+  <p class="tldr">对象关联 Monitor，monitorenter 进 monitorexit 出。</p>
+  <p>synchronized 底层依赖 JVM <mark>Monitor</mark>（管程/监视器）锁机制。字节码层面，同步块通过 <code>monitorenter</code> 和 <code>monitorexit</code> 两条指令实现。</p>
+  <ul>
+    <li>每个 Java 对象都关联一个 Monitor，对象头 <mark>Mark Word</mark> 存锁状态</li>
+    <li>线程通过获取 Monitor <mark>持有权</mark>来加锁：成功进入同步块，失败阻塞</li>
+    <li><code>monitorexit</code> 出现两次（正常退出 + 异常退出），保证锁一定释放</li>
+  </ul>
+  <p><span class="supplement">补充：同步方法没有 monitorenter/monitorexit 指令，而是在方法表 flags 里设 ACC_SYNCHRONIZED 标志，JVM 调用时自动加锁解锁。</span></p>
+
+  <h2>二、synchronized 锁升级：四阶段逐级加重</h2>
+  <p class="tldr">无锁→偏向→轻量级→重量级，升级不可逆。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>阶段</th><th>触发条件</th><th>实现机制</th><th>性能</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><mark>无锁</mark></td>
+        <td>初始状态</td>
+        <td>对象头无锁标记</td>
+        <td>最快</td>
+        <td>空房间没人占</td>
+      </tr>
+      <tr>
+        <td><mark>偏向锁</mark></td>
+        <td>单线程访问</td>
+        <td>Mark Word 记线程 ID，零开销进入</td>
+        <td>极快</td>
+        <td>门牌写你名字，直接进</td>
+      </tr>
+      <tr>
+        <td><mark>轻量级锁</mark></td>
+        <td>第二线程申请（非同时竞争）</td>
+        <td>CAS 自旋 + 栈帧锁记录</td>
+        <td>快</td>
+        <td>一前一后来，敲门没人就进</td>
+      </tr>
+      <tr>
+        <td><mark>重量级锁</mark></td>
+        <td>多线程同时竞争且自旋失败</td>
+        <td>Monitor 阻塞，OS 调度唤醒</td>
+        <td>慢</td>
+        <td>排队取号，叫号才进</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：轻量级锁触发是"第二个线程申请锁"，不是两个线程同时竞争——可以一前一后交替执行同步块；自旋锁不是独立阶段，是轻量级到重量级之间的过渡策略。JDK15 起偏向锁默认关闭（-XX:-UseBiasedLocking），JDK18 逐步废弃。</span></p>
+
+  <h2>三、MySQL 锁：行锁与表锁的取舍</h2>
+  <p class="tldr">行锁并发高开销大，表锁并发低开销小。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>行锁</th><th>表锁</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>锁定粒度</td>
+        <td>整行数据</td>
+        <td>整张表</td>
+        <td>行锁锁一排座位，表锁锁整个厅</td>
+      </tr>
+      <tr>
+        <td>开销/加锁速度</td>
+        <td>大 / 慢</td>
+        <td>小 / 快</td>
+        <td>行锁要定位行，表锁一把抓</td>
+      </tr>
+      <tr>
+        <td>锁冲突概率</td>
+        <td>最低</td>
+        <td>最高</td>
+        <td>行锁只冲突同行</td>
+      </tr>
+      <tr>
+        <td>并发度</td>
+        <td>最高</td>
+        <td>最低</td>
+        <td>行锁让不同行并行</td>
+      </tr>
+      <tr>
+        <td>引擎支持</td>
+        <td><mark>InnoDB</mark></td>
+        <td><mark>MyISAM</mark> / InnoDB</td>
+        <td>MyISAM 只支持表锁</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：InnoDB 既支持行锁也支持表锁，默认行锁；但未走索引的查询会退化为表锁（行锁基于索引实现）。MyISAM 只支持表锁。</span></p>
+
+  <h3>悲观锁 vs 乐观锁</h3>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>悲观锁</th><th>乐观锁</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>思路</td>
+        <td>拿数据就上锁，别人 block</td>
+        <td>拿数据不上锁，更新时校验</td>
+        <td>悲观先占座，乐观提交时看</td>
+      </tr>
+      <tr>
+        <td>实现</td>
+        <td><code>SELECT ... FOR UPDATE</code></td>
+        <td>版本号 / CAS 机制</td>
+        <td>悲观靠 DB 锁，乐观靠应用层</td>
+      </tr>
+      <tr>
+        <td>冲突假设</td>
+        <td>冲突频繁</td>
+        <td>冲突稀少</td>
+        <td>悲观适合写多，乐观适合读多</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：共享锁（S 锁）是悲观锁的一种——多个事务对同一资源共享同一把锁（读锁），允许并发读但阻塞写。乐观锁不是"不加锁"，而是延迟到更新时校验，本质是应用层策略。</span></p>
+
+  <h2>四、公平锁与非公平锁：顺序 vs 吞吐</h2>
+  <p class="tldr">公平 FIFO 排队，非公平插队抢吞吐。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>维度</th><th>公平锁</th><th>非公平锁</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>获取顺序</td>
+        <td>按等待顺序，FIFO 队头取</td>
+        <td>不管顺序，概率相等</td>
+        <td>公平排队取号，非公平谁手快谁得</td>
+      </tr>
+      <tr>
+        <td>性能</td>
+        <td>低，大量时间花在调度</td>
+        <td>高，响应速度快</td>
+        <td>公平要切换线程，非公平可连续获取</td>
+      </tr>
+      <tr>
+        <td>饥饿</td>
+        <td>不会饿死</td>
+        <td>可能饿死等待久的线程</td>
+        <td>公平保底，非公平看运气</td>
+      </tr>
+      <tr>
+        <td>默认</td>
+        <td>需显式配置</td>
+        <td>ReentrantLock / synchronized 默认</td>
+        <td><code>new ReentrantLock(true)</code> 才公平</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：synchronized 是非公平锁且不可配置；ReentrantLock 默认非公平，可通过构造参数 new ReentrantLock(true) 切换为公平。非公平吞吐高是因为允许"刚释放锁的线程立即再抢"，减少线程切换开销。</span></p>
+
+  <h2>五、可重入锁与 ReentrantLock：state 计数实现重入</h2>
+  <p class="tldr">可重入靠 state 累加，同一线程多次获取不死锁。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>机制</th><th>作用</th><th>记忆画面</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><mark>state 计数</mark></td>
+        <td>记录重入次数</td>
+        <td>计数器：进一次 +1，出一次 -1</td>
+      </tr>
+      <tr>
+        <td>线程 ID 记录</td>
+        <td>判断是否同一线程</td>
+        <td>门牌记住户，住户可反复进出</td>
+      </tr>
+      <tr>
+        <td>state &gt; 0</td>
+        <td>锁仍被持有</td>
+        <td>计数器没归零，门还锁着</td>
+      </tr>
+      <tr>
+        <td>state = 0</td>
+        <td>完全释放</td>
+        <td>计数器归零，门开了</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><mark>ReentrantLock</mark> 基于 <mark>AQS</mark>（AbstractQueuedSynchronizer）实现：</p>
+  <ul>
+    <li><strong>加锁</strong>：通过 <code>currentThread == exclusiveOwnerThread</code> 判断可重入性，同一线程则 state 累加，否则入队等待</li>
+    <li><strong>解锁</strong>：state 减到 0 才完全释放，此前 state &gt; 0 锁仍被持有</li>
+    <li><strong>手动释放</strong>：必须在 <code>finally</code> 块中调用 <code>unlock()</code>，否则死锁</li>
+  </ul>
+  <p><span class="supplement">补充：synchronized 是 JVM 层面自动释放（monitorexit），ReentrantLock 是 API 层面手动释放，忘记 unlock 会死锁。两者都可重入。ReentrantLock 比 synchronized 多了：可中断（lockInterruptibly）、可超时（tryLock）、可公平、多条件变量（Condition）。</span></p>
+
+  <h2>高频场景题</h2>
+  <p class="tldr">三道诊断题，先判断再答机制。</p>
+
+  <h3>"synchronized 和 ReentrantLock 怎么选？"</h3>
+  <blockquote>先看是否需要高级特性——需要可中断、超时、公平、多 Condition 选 ReentrantLock；简单互斥选 synchronized（JVM 自动释放、锁升级优化、JDK6 后性能差距很小）。synchronized 用法简单不会忘释放，ReentrantLock 灵活但易漏 unlock。</blockquote>
+
+  <h3>"InnoDB 行锁为什么有时变表锁？"</h3>
+  <blockquote>先看 SQL 是否走了索引——InnoDB 行锁基于索引实现，WHERE 条件未命中索引（或类型不匹配导致索引失效）时，行锁退化为表锁。排查：EXPLAIN 看是否 type=ALL 全表扫描，加合适索引即可恢复行锁。</blockquote>
+
+  <h3>"偏向锁为什么 JDK15 后默认关闭？"</h3>
+  <blockquote>先看收益与成本——偏向锁对单线程场景收益大，但现代应用多线程竞争普遍，偏向锁在竞争时撤销开销高（STW），且维护复杂。JDK15+ 优化后轻量级锁 CAS 足够快，偏向锁收益下降，故默认关闭。</blockquote>
+
+  <h2>面试回答模板：三句话讲清一题</h2>
+  <p class="tldr">本质 → 机制 → 实战选型。</p>
+  <blockquote>
+    <strong>问题本质是……</strong>（先说锁属于哪一层：synchronized 原理、锁升级、MySQL 锁、还是 AQS）。<br>
+    <strong>机制是……</strong>（解释原理 + 关键变量/指令），因为……（为什么这样设计）。<br>
+    <strong>实战中我会……</strong>（选型 + 注意点），例如……（具体场景）。
+  </blockquote>
+  <p>例：问"synchronized 锁升级过程"——本质是 JVM 根据竞争激烈程度自动选择锁级别；机制是无锁→偏向（单线程记 ID）→轻量级（CAS 自旋）→重量级（Monitor 阻塞），升级不可逆；实战中 JDK6 后 synchronized 性能已优化，简单互斥优先用它，注意偏向锁 JDK15 默认关闭。</p>
+
+  <h2>最后复习：闭眼回忆 8 句</h2>
+  <p class="tldr">原理、升级、行表锁、悲观乐观、公平、可重入、AQS。</p>
+  <ol>
+    <li><strong>原理</strong>：synchronized 底层靠 Monitor，同步块用 monitorenter/monitorexit，同步方法用 ACC_SYNCHRONIZED 标志。</li>
+    <li><strong>升级</strong>：无锁→偏向（单线程）→轻量级（CAS 自旋）→重量级（Monitor 阻塞），单向不可逆。</li>
+    <li><strong>易混</strong>：轻量级是"第二线程申请"非"同时竞争"；自旋锁是过渡，不是独立阶段。</li>
+    <li><strong>MySQL 行/表锁</strong>：行锁开销大并发高（InnoDB 默认），表锁开销小并发低（MyISAM）；InnoDB 未走索引退化为表锁。</li>
+    <li><strong>悲观/乐观</strong>：悲观先锁（FOR UPDATE），乐观靠版本号校验；共享锁是悲观锁的一种。</li>
+    <li><strong>公平/非公平</strong>：公平 FIFO 不饿但慢，非公平插队快但可能饿死；synchronized 永远非公平，ReentrantLock 默认非公平可配置。</li>
+    <li><strong>可重入</strong>：靠 state +1/-1 计数 + 线程 ID 判断，归零才完全释放；synchronized 和 ReentrantLock 都可重入。</li>
+    <li><strong>AQS</strong>：ReentrantLock 基于 AQS，currentThread==exclusiveOwnerThread 判重入，必须 finally 手动 unlock。</li>
+  </ol>
+
+  <h2>怎么练才记得住</h2>
+  <p class="tldr">主动回忆，遮表格自讲，隔天换例子。</p>
+  <ol>
+    <li>每次只看一个小节，遮住表格，先自己说出"阶段/类型 → 触发条件 → 机制 → 优缺点"，再对照。</li>
+    <li>用"高频场景题"的 3 道题各讲 30 秒；卡住时只回看对应小节。</li>
+    <li>隔天再讲一遍，换成自己的项目例子；能解释"为什么选 synchronized 还是 ReentrantLock、为什么行锁变表锁"才算会。</li>
+    <li>复习时轮流画"锁升级四阶段流程"和"MySQL 锁分类表"；能默写出 state 计数和 AQS 判断逻辑才算熟。</li>
+  </ol>
+
+  <script type="text/template" id="mindmap-lock-mechanism">
+# 锁机制：synchronized锁升级与MySQL锁
+## synchronized原理
+### 底层依赖JVM Monitor
+### monitorenter进monitorexit出
+### 对象头Mark Word存锁状态
+### 同步方法用ACC_SYNCHRONIZED
+## 锁升级四阶段
+### 无锁初始状态
+### 偏向锁单线程记ID
+### 轻量级锁CAS自旋
+### 重量级锁Monitor阻塞
+### 升级不可逆
+## MySQL锁
+### 行锁开销大并发高
+### 表锁开销小并发低
+### InnoDB默认行锁
+### MyISAM只有表锁
+### 未走索引退化为表锁
+### 悲观锁先上锁
+### 乐观锁版本号校验
+### 共享锁是悲观锁一种
+## 公平锁与非公平锁
+### 公平FIFO不饿但慢
+### 非公平插队快可能饿死
+### synchronized永远非公平
+### ReentrantLock默认非公平可配置
+## 可重入锁与AQS
+### state计数记录重入次数
+### 线程ID判断同一线程
+### state归零才完全释放
+### ReentrantLock基于AQS
+### exclusiveOwnerThread判重入
+### 必须finally手动unlock
+### synchronized自动释放
+  </script>
+</section>

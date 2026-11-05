@@ -1,0 +1,204 @@
+<section class="note" data-note-id="jvm-gc" data-note-title="JVM垃圾回收核心体系">
+
+  <p class="tldr">可达性分析判存活，分代收集选算法，G1/ZGC 控停顿。</p>
+
+  <h2>一、为什么要做垃圾回收</h2>
+  <p class="tldr">分配新对象 + 回收无引用对象，防内存耗尽。</p>
+  <p>分配新对象内存 + 回收不再被引用的对象内存，确保程序不会因<mark>内存耗尽</mark>而崩溃，同时保证被引用对象不被错误回收。</p>
+
+  <h2>二、如何判断对象需要回收</h2>
+  <p class="tldr">引用计数已废弃，JVM 唯一用可达性分析。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>算法</th><th>原理</th><th>优点</th><th>致命缺陷</th><th>是否主流</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><mark>引用计数法</mark></td>
+        <td>每个对象维护计数器，被引用 +1，失效 -1，为 0 则回收</td>
+        <td>实现简单、实时回收</td>
+        <td>❌ 无法解决<mark>循环引用</mark>（A 引 B、B 引 A，永不为 0）</td>
+        <td>已废弃</td>
+      </tr>
+      <tr>
+        <td><mark>可达性分析算法</mark></td>
+        <td>从 GC Roots 出发，能到达的对象存活，否则回收</td>
+        <td>✅ 解决循环引用</td>
+        <td>需要 STW 标记</td>
+        <td>JVM 唯一使用</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>GC Roots 包括：</p>
+  <ul>
+    <li>虚拟机栈（栈帧中本地变量表）引用的对象</li>
+    <li>方法区中<mark>静态属性</mark>引用的对象</li>
+    <li>方法区中<mark>常量</mark>引用的对象</li>
+    <li>本地方法栈中 <mark>JNI</mark> 引用的对象</li>
+    <li>活跃线程（Thread）</li>
+  </ul>
+  <p><span class="supplement">补充：GC Roots 还可包含同步锁（synchronized）持有的对象，以及 JVM 内部引用（如基本类型对应的 Class 对象、常驻异常对象、类加载器等）。</span></p>
+
+  <h2>三、四种垃圾回收算法</h2>
+  <p class="tldr">新生代复制快，老年代标记整理稳。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>算法</th><th>核心逻辑</th><th>优点</th><th>缺点</th><th>适用场景</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><mark>标记-清除</mark></td>
+        <td>标记存活对象 → 清除未标记对象</td>
+        <td>简单</td>
+        <td>❌ 内存碎片、效率不稳定</td>
+        <td>老年代（配合 CMS）</td>
+      </tr>
+      <tr>
+        <td><mark>复制算法</mark></td>
+        <td>内存分两块，每次用一块，用完把存活对象复制到另一块，整块清理</td>
+        <td>✅ 无碎片、效率高</td>
+        <td>❌ 内存利用率只有 50%</td>
+        <td>新生代（主流）</td>
+      </tr>
+      <tr>
+        <td><mark>标记-整理</mark></td>
+        <td>标记存活 → 存活对象向一端移动 → 清理边界外内存</td>
+        <td>✅ 无碎片</td>
+        <td>❌ 移动对象开销大</td>
+        <td>老年代</td>
+      </tr>
+      <tr>
+        <td><mark>分代收集</mark></td>
+        <td>不同区域用不同算法（新生代复制 + 老年代标记整理/清除）</td>
+        <td>✅ 扬长避短</td>
+        <td>实现复杂</td>
+        <td>所有主流 JVM</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>记忆口诀：新生代复制快，老年代标记整理稳，CMS 标记清除有碎片。</p>
+
+  <h2>四、分代回收完整流程</h2>
+  <p class="tldr">Eden→Survivor 轮换，年龄到阈值晋升老年代。</p>
+  <ol>
+    <li>新对象 → <mark>Eden</mark> 区。</li>
+    <li>Eden 满 → <mark>Minor GC</mark>：回收不活跃对象，存活对象 → Survivor0（S0）。</li>
+    <li>Eden 再满 → Minor GC：Eden 存活 → S1，S0 存活 → S1（S1 放不下则提前晋升 Old）。</li>
+    <li>重复上述过程，S0/S1 轮流担当"留宿区"；每熬过一次 GC <mark>年龄 +1</mark>，达阈值（默认 15）晋升 Old。</li>
+    <li>Old 区达一定比例 → <mark>Major GC</mark>（只回收 Old，通常 CMS/G1 并发）。</li>
+    <li>Old 区满 → <mark>Full GC</mark>（回收全堆，STW 最严重）。</li>
+    <li>Full GC 后内存仍不够 → <mark>OutOfMemoryError（OOM）</mark>。</li>
+  </ol>
+  <p>易混概念：</p>
+  <ul>
+    <li><mark>Minor GC</mark> = 新生代回收（频繁，速度快）</li>
+    <li><mark>Major GC</mark> = 老年代回收（较慢，CMS/G1 并发）</li>
+    <li><mark>Full GC</mark> = 整个堆回收（最慢，STW 最长）</li>
+  </ul>
+  <p><span class="supplement">补充：新生代 Eden:Survivor0:Survivor1 默认比例 8:1:1，由 -XX:SurvivorRatio 控制；对象晋升年龄由 -XX:MaxTenuringThreshold 控制（默认 15，CMS 为 6）。</span></p>
+
+  <h2>五、垃圾收集器分类速查</h2>
+  <p class="tldr">吞吐量选 Parallel，低延迟选 G1/ZGC。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>收集器</th><th>线程模式</th><th>核心特点</th><th>暂停时间</th><th>适用场景</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><mark>Serial</mark></td>
+        <td>单线程</td>
+        <td>简单高效，Client 模式默认</td>
+        <td>STW 较长</td>
+        <td>单核 CPU、内存小</td>
+      </tr>
+      <tr>
+        <td><mark>Parallel（PS+PO）</mark></td>
+        <td>多线程</td>
+        <td>吞吐量优先，Server 模式默认（JDK8）</td>
+        <td>STW 较长</td>
+        <td>离线批处理、后台任务</td>
+      </tr>
+      <tr>
+        <td><mark>CMS</mark></td>
+        <td>多线程并发</td>
+        <td>标记-清除，低延迟，有碎片问题</td>
+        <td>STW 较短</td>
+        <td>中等堆内存、对延迟敏感</td>
+      </tr>
+      <tr>
+        <td><mark>G1</mark></td>
+        <td>多线程并发</td>
+        <td>Region 分区，可预测停顿时间（默认 200ms）</td>
+        <td>STW 可控（50~200ms）</td>
+        <td>高并发在线交易（4~64GB 堆）</td>
+      </tr>
+      <tr>
+        <td><mark>ZGC</mark></td>
+        <td>多线程并发</td>
+        <td>染色指针 + 读屏障，超低延迟（&lt;1ms）</td>
+        <td>STW 亚毫秒级</td>
+        <td>金融交易、超大堆（&gt;64GB）</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>记忆口诀：吞吐量优先 → Parallel；低延迟优先 → CMS → G1 → ZGC（越来越低）；JDK8 默认 Parallel，JDK9+ 默认 G1。</p>
+
+  <h2>六、关键概念补充</h2>
+  <p class="tldr">STW 是延迟根源，空间分配担保防晋升失败。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>概念</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>STW（Stop The World）</mark></td><td>GC 时暂停所有用户线程，是延迟的根源</td></tr>
+      <tr><td><mark>吞吐量</mark></td><td>业务代码运行时间 /（业务代码运行时间 + GC 时间）</td></tr>
+      <tr><td><mark>内存泄漏</mark></td><td>对象不再被程序使用，但 GC Roots 仍持有引用 → 无法回收 → OOM</td></tr>
+      <tr><td><mark>空间分配担保</mark></td><td>Minor GC 前检查老年代剩余空间是否够容纳晋升对象，不够则提前触发 Full GC</td></tr>
+    </tbody>
+  </table>
+
+  <h2>七、面试串联话术</h2>
+  <p class="tldr">判活→算法→分代→收集器→调优一气呵成。</p>
+  <blockquote>
+    <p>判断对象是否存活，JVM 用可达性分析，从 GC Roots 出发能到达的就是存活，否则回收。GC Roots 主要包括栈帧中的局部变量、静态变量和活跃线程。</p>
+    <p>回收算法有四种：复制算法用于新生代，效率高但耗内存；标记-清除用于老年代，但会产生碎片；标记-整理解决了碎片问题，但移动对象有开销。所以 JVM 采用分代收集，新生代用复制，老年代用标记-整理或标记-清除。</p>
+    <p>收集器选型上，Parallel 适合离线批处理，追求吞吐量；G1 适合高并发在线系统，能控制暂停在 200ms 内；ZGC 适合金融支付场景，追求亚毫秒级暂停，通过染色指针和读屏障实现并发移动对象。</p>
+    <p>调优时重点关注 FGC 次数和 STW 时长，用 jstat 看 GC 频率，用 jmap 导出 Dump 分析内存泄漏，根据业务场景选择合适的收集器和堆大小参数。</p>
+  </blockquote>
+
+  <script type="text/template" id="mindmap-jvm-gc">
+# JVM垃圾回收
+## 判断对象存活
+### 引用计数已废弃
+### 无法解决循环引用
+### 可达性分析算法
+### 从GC Roots出发
+### GC Roots有哪些
+### 栈帧局部变量
+### 静态变量常量
+### JNI引用活跃线程
+## 四种回收算法
+### 标记清除有碎片
+### 复制算法无碎片
+### 标记整理无碎片
+### 分代收集扬长避短
+## 分代回收流程
+### 新对象进Eden
+### Minor GC清新生代
+### Survivor轮换留宿
+### 年龄阈值晋升老年代
+### Full GC回收全堆
+### 仍不够则OOM
+## 垃圾收集器选型
+### Serial单线程
+### Parallel吞吐量优先
+### CMS低延迟有碎片
+### G1分区控停顿
+### ZGC染色读屏障
+## 关键概念
+### STW暂停用户线程
+### 吞吐量公式
+### 内存泄漏致OOM
+### 空间分配担保
+  </script>
+</section>

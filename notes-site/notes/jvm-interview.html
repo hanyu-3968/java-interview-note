@@ -1,0 +1,187 @@
+<section class="note" data-note-id="jvm-interview" data-note-title="JVM面试深度追问">
+
+  <p class="tldr">G1/ZGC 原理 + 对象晋升 + OOM 定位 + MAT 四步 + 收集器选型。</p>
+
+  <h2>一、G1 收集器工作原理</h2>
+  <p class="tldr">Region 分块，垃圾优先，时间一到，立马停手。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>核心设计</th><th>说明</th><th>面试关键词</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><mark>Region 划分</mark></td>
+        <td>堆分为约 2048 个等大小 Region（1~32MB），不再有连续年轻代/老年代</td>
+        <td>Region、分区</td>
+      </tr>
+      <tr>
+        <td><mark>可预测停顿</mark></td>
+        <td>每次只选垃圾最多的 Region 清理（Garbage-First），时间到了就停</td>
+        <td>Garbage-First、MaxGCPauseMillis</td>
+      </tr>
+      <tr>
+        <td><mark>停顿模型</mark></td>
+        <td>用户设定 <code>-XX:MaxGCPauseMillis</code>（默认 200ms），JVM 动态调整</td>
+        <td>软实时、目标暂停</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：G1 不是"更好的 CMS"。CMS 是连续老年代 + 标记清除（有碎片），G1 是 Region 分区 + 标记整理（无碎片），架构完全不同。G1 通过"只扫最脏的 Region"实现可预测停顿，不是"扫得更快"。</span></p>
+
+  <h2>二、ZGC 超低延迟原理</h2>
+  <p class="tldr">染色指针贴标签，读屏障自动导航，用户不停顿。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>核心设计</th><th>说明</th><th>面试关键词</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><mark>染色指针</mark></td>
+        <td>对象引用中编码额外状态信息（标记、重定位等）</td>
+        <td>染色指针、Colored Pointers</td>
+      </tr>
+      <tr>
+        <td><mark>读屏障</mark></td>
+        <td>用户线程读对象时，如果对象被移动了，自动重定向到新地址</td>
+        <td>Load Barrier、并发移动</td>
+      </tr>
+      <tr>
+        <td><mark>并发整理</mark></td>
+        <td>标记、移动、重定位全部与用户线程并发执行</td>
+        <td>STW &lt; 1ms、亚毫秒级</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：ZGC 的"亚毫秒级停顿"靠的是染色指针 + 读屏障实现并发移动对象，不是"GC 跑得更快"。读屏障在用户线程读对象时自动修正指针，所以用户线程几乎不感知移动。代价是读屏障有微小开销，适合超大堆（>64GB）场景。</span></p>
+
+  <h2>三、对象晋升机制</h2>
+  <p class="tldr">年龄到、对象大、放不下、同龄过半。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>晋升方式</th><th>触发条件</th><th>关键参数</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>年龄阈值</mark></td><td>熬过 15 次 Minor GC</td><td><code>-XX:MaxTenuringThreshold=15</code></td></tr>
+      <tr><td><mark>大对象直接分配</mark></td><td>对象大小超过阈值</td><td><code>-XX:PretenureSizeThreshold</code>（仅 Serial/ParNew）；G1 中为 G1HeapRegionSize 的一半</td></tr>
+      <tr><td><mark>Survivor 空间不足</mark></td><td>Minor GC 后存活对象放不下 Survivor</td><td>空间分配担保失败 → Promotion failed</td></tr>
+      <tr><td><mark>动态年龄判定</mark></td><td>Survivor 中同龄对象总大小 ≥ Survivor 区一半</td><td>此年龄及以上对象全部晋升</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充：动态年龄判定不是"年龄到 15 才晋升"。Survivor 中相同年龄对象总和大于一半 Survivor 空间，大于等于该年龄的对象直接晋升——所以可能 3 岁就全部晋升了，不用等到 15。</span></p>
+
+  <h2>四、JIT 编译与逃逸分析</h2>
+  <p class="tldr">HotSpot 靠标量替换实现"栈上分配"效果。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>概念</th><th>说明</th><th>面试关键词</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>JIT 编译器</mark></td><td>热点代码编译为本地机器码并缓存</td><td>C1（快速编译）、C2（激进优化）、分层编译</td></tr>
+      <tr><td><mark>逃逸分析</mark></td><td>分析对象是否逃逸出方法或线程</td><td>不逃逸、方法逃逸、线程逃逸</td></tr>
+      <tr><td>栈上分配（效果）</td><td>不逃逸对象直接在栈上分配，方法结束即销毁</td><td>减轻 GC 压力</td></tr>
+      <tr><td><mark>标量替换（核心）</mark></td><td>将对象字段拆解为独立标量，在栈/寄存器中直接使用</td><td><code>-XX:+DoEscapeAnalysis</code>（JDK8 默认开启）</td></tr>
+    </tbody>
+  </table>
+  <p><span class="supplement">补充（面试陷阱）：HotSpot 没有独立实现栈上分配，而是通过标量替换达到类似效果！说"栈上分配"时要补一句"实际是标量替换实现的"，否则面试官会追问。</span></p>
+
+  <h2>五、OOM 精准定位</h2>
+  <p class="tldr">四种 OOM 四种根因，先看异常消息关键字。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>OOM 类型</th><th>异常消息关键字</th><th>诊断工具</th><th>典型根因</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>堆溢出</mark></td><td><code>Java heap space</code></td><td><code>jstat -gcutil</code> 看 E/O 区满</td><td>内存泄漏、大对象过多</td></tr>
+      <tr><td><mark>元空间溢出</mark></td><td><code>Metaspace</code></td><td><code>jstat</code> 看 MU 接近 100%</td><td>动态类加载泄漏（CGLIB/热部署）</td></tr>
+      <tr><td><mark>直接缓冲区溢出</mark></td><td><code>Direct buffer memory</code></td><td><code>jcmd NMT</code> 或 Arthas</td><td>Netty/DirectByteBuffer 未释放</td></tr>
+      <tr><td><mark>GC 开销超限</mark></td><td><code>GC overhead limit exceeded</code></td><td>堆快满时的保护机制</td><td>GC 回收效率极低</td></tr>
+    </tbody>
+  </table>
+
+  <h2>六、MAT 定位内存泄漏 · 4 步走</h2>
+  <p class="tldr">Leak Suspects → Dominator Tree → Path to GC Roots → OQL。</p>
+  <ol>
+    <li><mark>Leak Suspects Report</mark>：看自动报告，找可疑大对象。</li>
+    <li><mark>Dominator Tree</mark>：按 Retained Heap 排序，找最大对象。</li>
+    <li><mark>Histogram + Path to GC Roots</mark>：排除弱/软引用，追到持有强引用的代码。</li>
+    <li><mark>OQL 精确查询</mark>：<code>SELECT * FROM byte[] WHERE length &gt; 1MB</code>。</li>
+  </ol>
+  <p>常见泄漏场景：HashMap/ArrayList 无界缓存、ThreadLocal 未 remove、监听器未注销。</p>
+  <p><span class="supplement">补充：Path to GC Roots 必须排除弱/软/虚引用，只看强引用链。弱/软/虚引用会被 GC 正常回收，不是泄漏根因；只有强引用链持有才是真正的泄漏。</span></p>
+
+  <h2>七、Arthas 核心命令速查</h2>
+  <p class="tldr">watch 看现场，trace 找瓶颈，tt 回放，thread 抓热点。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>命令</th><th>作用</th><th>示例</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><mark>watch</mark></td><td>观测方法入参/返回值/异常</td><td><code>watch com.xxx.Service method "{params, returnObj}" -x 2 -e</code></td></tr>
+      <tr><td><mark>trace</mark></td><td>跟踪调用链路耗时</td><td><code>trace com.xxx.Service method 'cost&gt;100'</code></td></tr>
+      <tr><td><mark>tt</mark></td><td>记录并回放调用</td><td><code>tt -t Service.method</code> → <code>tt -i &lt;index&gt; -p</code></td></tr>
+      <tr><td><code>thread -n 5</code></td><td>查看最忙的 5 个线程</td><td><code>thread -n 5</code></td></tr>
+      <tr><td><code>dashboard</code></td><td>实时总览（CPU/内存/线程）</td><td><code>dashboard</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>八、垃圾收集器选型策略</h2>
+  <p class="tldr">Parallel 吞吐量，G1 控 200ms，ZGC 亚毫秒。</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>业务场景</th><th>首选收集器</th><th>备选</th><th>核心目标</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>离线批处理</td><td><mark>Parallel GC</mark></td><td>G1（大堆）</td><td>吞吐量优先，允许秒级暂停</td></tr>
+      <tr><td>高并发在线交易</td><td><mark>G1</mark></td><td>ZGC（超大堆）</td><td>暂停 &lt; 200ms</td></tr>
+      <tr><td>金融敏感接口</td><td><mark>ZGC / Shenandoah</mark></td><td>G1（JDK8）</td><td>暂停 &lt; 10ms，甚至 &lt; 1ms</td></tr>
+    </tbody>
+  </table>
+
+  <h2>九、面试串联话术</h2>
+  <p class="tldr">原理→排查→选型一气呵成。</p>
+  <blockquote>
+    <p>线上 CPU 飙高，我会先 top 找进程，再 top -Hp 找线程，转十六进制后用 jstack 定位代码行。如果是 GC 线程在忙，用 jstat 看 GC 频率，再用 jmap 导 Dump 用 MAT 分析——Leak Suspects 看全局，Dominator Tree 找大对象，Path to GC Roots 追到泄漏代码。</p>
+    <p>调优时，我会先明确目标（延迟<200ms），再开启 GC 日志采集数据。如果 Full GC 频繁但老年代不降，大概率是内存泄漏，重点排查集合缓存和 ThreadLocal 未清理。参数上，-Xms 和 -Xmx 设为相同避免动态扩容，-XX:+DisableExplicitGC 屏蔽人为触发。</p>
+    <p>收集器选型方面，离线批处理用 Parallel GC 保吞吐量，高并发交易用 G1 控暂停，金融敏感接口用 ZGC 追求亚毫秒级。每次调优必须在预发环境压测验证，达标才能上线——这是工程化闭环。</p>
+  </blockquote>
+
+  <script type="text/template" id="mindmap-jvm-interview">
+# JVM面试深度追问
+## G1收集器原理
+### Region约2048个分区
+### Garbage-First只扫最脏
+### MaxGCPauseMillis默认200ms
+## ZGC超低延迟
+### 染色指针编码状态
+### 读屏障自动重定向
+### 并发整理STW小于1ms
+## 对象晋升机制
+### 年龄阈值15次GC
+### 大对象直接进老年代
+### Survivor空间不足
+### 动态年龄判定同龄过半
+## JIT与逃逸分析
+### C1快速C2激进优化
+### 标量替换实现栈上分配
+### DoEscapeAnalysis默认开启
+## OOM精准定位
+### Java heap space堆溢出
+### Metaspace元空间溢出
+### Direct buffer堆外溢出
+### GC overhead保护机制
+## MAT四步走
+### Leak Suspects看报告
+### Dominator Tree找大对象
+### Path to GC Roots追强引用
+### OQL精确查询
+## Arthas命令
+### watch看方法现场
+### trace找链路瓶颈
+### tt记录回放
+### thread -n5抓热点
+## 收集器选型
+### Parallel吞吐量优先
+### G1控200ms暂停
+### ZGC亚毫秒级
+  </script>
+</section>
