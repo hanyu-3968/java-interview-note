@@ -148,7 +148,8 @@
       });
     },
 
-    // 读取文件内容：优先缓存，没有则用 fetch 读本地（file:// 协议下 fetch 同目录文件可行）
+    // 读取文件内容：优先缓存，没有则尝试多种方式读本地文件
+    // HBuilderX App 的 WebView 对 file:// fetch 可能有限制，所以加 XHR 和 plus.io 回退
     // 返回 Promise<string>
     read: function(path){
       var cacheKey = CACHE_PREFIX + path;
@@ -156,11 +157,71 @@
         var cached = localStorage.getItem(cacheKey);
         if (cached !== null) return Promise.resolve(cached);
       } catch(e){}
-      // 没缓存，fetch 本地文件
-      return fetch(path, { cache: 'no-cache' }).then(function(r){
-        if(!r.ok) throw new Error('HTTP ' + r.status);
-        return r.text();
-      });
+      // 没缓存，尝试多种方式读本地文件
+      return this._readLocal(path);
+    },
+
+    // 多策略读取本地文件：fetch → XHR → plus.io
+    _readLocal: function(path){
+      var self = this;
+      // 策略 1：fetch
+      return fetch(path, { cache: 'no-cache' })
+        .then(function(r){
+          if(!r.ok) throw new Error('fetch HTTP ' + r.status);
+          return r.text();
+        })
+        .catch(function(fetchErr){
+          // 策略 2：XMLHttpRequest（同步 file:// 读取，绕过 fetch 的 CORS 限制）
+          return new Promise(function(resolve, reject){
+            try {
+              var xhr = new XMLHttpRequest();
+              xhr.open('GET', path, true);
+              xhr.responseType = 'text';
+              xhr.onload = function(){
+                if(xhr.status === 200 || xhr.status === 0){
+                  resolve(xhr.responseText);
+                } else {
+                  reject(new Error('XHR HTTP ' + xhr.status));
+                }
+              };
+              xhr.onerror = function(){
+                reject(new Error('XHR onerror'));
+              };
+              xhr.send();
+            } catch(e){
+              reject(new Error('XHR 异常: ' + e.message));
+            }
+          }).catch(function(xhrErr){
+            // 策略 3：plus.io（HBuilderX 5+ 原生文件读取）
+            if(window.plus && window.plus.io){
+              return new Promise(function(resolve, reject){
+                try {
+                  // plus.io 用相对路径，需要转成绝对路径
+                  plus.io.resolveLocalFileSystemURL(path, function(entry){
+                    entry.file(function(file){
+                      var reader = new plus.io.FileReader();
+                      reader.onloadend = function(e){
+                        resolve(e.target.result);
+                      };
+                      reader.onerror = function(){
+                        reject(new Error('plus.io read error'));
+                      };
+                      reader.readAsText(file);
+                    }, function(){
+                      reject(new Error('plus.io file error'));
+                    });
+                  }, function(){
+                    reject(new Error('plus.io resolve error'));
+                  });
+                } catch(e){
+                  reject(new Error('plus.io 异常: ' + e.message));
+                }
+              });
+            }
+            // 所有策略都失败，抛出汇总错误
+            throw new Error('读取失败 [fetch:' + fetchErr.message + '][xhr:' + xhrErr.message + ']');
+          });
+        });
     },
 
     // 读 JSON：同 read 但解析

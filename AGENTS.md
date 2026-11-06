@@ -361,6 +361,55 @@ Remove-Item "$site\mermaid-config.json","$site\puppeteer-config.json" -Force
 | PowerShell `??` 报错 | 脚本执行失败 | 旧版 PowerShell 不支持空合并运算符 `??` | 用 `if(-not $x){ $x = ... }` |
 | Node 正则转义地狱 | 测试脚本报错 | PowerShell here-string 里 `\/` 被转义 | 把测试 JS 写到临时 .js 文件再 `node xx.js` 执行，不用 `-e` 内联 |
 | docx 路径 | 找不到 docx | docx 在 `doc/` 子目录，不在基目录 | docx 路径用 `$base\doc\xxx.docx` |
+| **改了代码打包不生效** | 在 `D:\project\Learn\java-interview-note` 改了 html/js，HBuilderX 重新打包安装后 App 里还是老代码 | **HBuilderX 打包的是另一个目录 `D:\Ai\aiStudyProject\hy-note`**，不是本仓库。两个目录是独立副本，改仓库代码不会自动同步到打包目录 | **改完代码必须手动复制到打包目录**，见下方「打包目录同步清单」 |
+| **App 里笔记正文空白** | 头部（标题/摘要/标签）正常显示，但 `#md-content` 正文区空白；每日笔记正常，Java 笔记不正常 | HBuilderX App 的 WebView 在 `file://` 协议下 **`fetch()` 读取子目录文件（如 `notes/xxx.md`）会被拦截**，但 fetch 根目录文件（`notes.json`）能成功——所以头部能显示（json 读到了），正文不能显示（md 读不到） | `updater.js` 的 `read` 方法加 **三级降级：fetch → XMLHttpRequest → plus.io**。XHR 对 file:// 比 fetch 宽松，实测 XHR 那级就生效 |
+| **App 里报错看不到** | JS 报错或 fetch 失败时 App 白屏/空白，无法排查 | 老代码只 `console.error`，App 里看不到 console；没有全局错误兜底 | `app.html` 加 `#fatal-error` 全局错误框（黑底红字）+ `selectNote` catch 里把错误**内联显示在正文区**（不依赖 console） |
+
+### 打包目录同步清单（重要！每次改完代码必做）
+
+**打包目录**：`D:\Ai\aiStudyProject\hy-note`（HBuilderX 打包的就是这个目录）
+**开发目录**：`D:\project\Learn\java-interview-note\notes-site`（本仓库，AI Agent 改代码的地方）
+
+两个目录结构一样（文件都在根目录，不在子目录），但是**独立的两份副本**。在开发目录改完代码后，必须复制到打包目录，否则打包出来的 APK 还是老代码。
+
+**需要同步的文件**（改了哪个就复制哪个）：
+
+```powershell
+$src = "D:\project\Learn\java-interview-note\notes-site"
+$dst = "D:\Ai\aiStudyProject\hy-note"
+
+# 常见需要同步的文件（按需取消注释）
+Copy-Item "$src\app.html"      "$dst\app.html"      -Force  # Java 笔记阅读器
+Copy-Item "$src\daily.html"    "$dst\daily.html"    -Force  # 每日笔记阅读器
+Copy-Item "$src\ai-app.html"   "$dst\ai-app.html"   -Force  # AI 笔记阅读器
+Copy-Item "$src\index.html"    "$dst\index.html"    -Force  # 首页（书架）
+Copy-Item "$src\updater.js"    "$dst\updater.js"    -Force  # 更新管理器（含三级降级）
+Copy-Item "$src\theme.js"      "$dst\theme.js"      -Force  # 主题
+Copy-Item "$src\settings-panel.js" "$dst\settings-panel.js" -Force  # 设置面板
+Copy-Item "$src\notes.json"    "$dst\notes.json"    -Force  # 笔记元数据
+Copy-Item "$src\daily.json"    "$dst\daily.json"    -Force  # 每日笔记元数据
+# 新增的笔记 md 也要复制
+Copy-Item "$src\notes\*.md"    "$dst\notes\"        -Force
+Copy-Item "$src\notes\daily\*.md" "$dst\notes\daily\" -Force
+```
+
+**⚠️ 绝对不要覆盖的文件**：
+- `manifest.json` —— 打包目录的是 **HBuilderX 的 App 配置**（含 AppID、权限、签名，9KB+），和开发目录的 `manifest.json`（笔记更新清单，200 字节）**完全不是一回事**，覆盖了会丢失 AppID 导致打包失败
+- `hy-note.keystore` —— Android 签名证书
+- `unpackage/` —— HBuilderX 的打包缓存和产物
+
+**验证同步成功**：
+```powershell
+# 对比两边文件大小/时间，确认复制到位
+Get-Item "$dst\app.html","$dst\updater.js" | Select-Object Name, Length, LastWriteTime
+```
+
+**打包流程**：
+1. 开发目录改代码 → 复制到打包目录（按上面清单）
+2. HBuilderX 打开 `D:\Ai\aiStudyProject\hy-note`
+3. 右键项目 → **刷新**（确保认到新文件）
+4. **发行 → 原生App-云打包**
+5. 装到手机验证
 
 ---
 

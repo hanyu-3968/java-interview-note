@@ -557,7 +557,13 @@ createApp({
         renderMd();
       }catch(e){
         console.error('加载笔记失败', e);
-        currentMd.value = '# 加载失败\n\n>' + e.message;
+        var msg = (e && e.message) ? e.message : String(e);
+        currentMd.value =
+          '## ⚠️ 笔记正文加载失败\n\n' +
+          '> 原因：`' + msg + '`\n>\n' +
+          '> 路径：`notes/daily/' + id + '.md`';
+        await nextTick();
+        renderMd();
       }finally{
         loadingMd.value = false;
       }

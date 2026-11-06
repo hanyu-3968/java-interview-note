@@ -304,6 +304,32 @@
 </head>
 <body>
 <div id="app"></div>
+<!-- 全局错误兜底：JS 报错时显示，而不是白屏（与 daily.html 一致） -->
+<div id="fatal-error" style="display:none;position:fixed;inset:0;z-index:9999;background:#000;color:#ff6b6b;padding:40px 20px;font-family:monospace;font-size:13px;overflow:auto">
+  <h3 style="color:#fff;margin-bottom:16px">页面加载出错</h3>
+  <pre id="fatal-error-msg" style="white-space:pre-wrap;word-break:break-all"></pre>
+  <p style="color:#888;margin-top:20px">请截图发给我排查。也可尝试 <a href="index.html" style="color:#0a84ff">返回首页</a>。</p>
+</div>
+<script>
+  // 全局错误收集：记录所有 JS 错误和 Promise 拒绝，方便 App 内排查
+  (function(){
+    var box = document.getElementById('fatal-error');
+    var msg = document.getElementById('fatal-error-msg');
+    function log(label, text){
+      if(msg){
+        msg.textContent += label + ' ' + text + '\n\n';
+      }
+      if(box) box.style.display = 'block';
+    }
+    window.addEventListener('error', function(e){
+      log('[ERROR]', (e.message || '未知错误') + (e.filename ? '\n  at ' + e.filename + ':' + e.lineno + ':' + e.lineno : ''));
+    });
+    window.addEventListener('unhandledrejection', function(e){
+      var r = e.reason;
+      log('[PROMISE]', (r && r.message) ? r.message : String(r));
+    });
+  })();
+</script>
 
 <script src="lib/vue.global.prod.js"></script>
 <script src="lib/marked.min.js"></script>
@@ -417,7 +443,7 @@ createApp({
       sidebarOpen.value = false;
       try{
         if(!mdCache[id]){
-          // 用 NoteUpdater 读取（优先缓存）
+          // 用 NoteUpdater 读取（优先缓存，多策略：fetch→XHR→plus.io）
           mdCache[id] = window.NoteUpdater
             ? await NoteUpdater.read('notes/' + id + '.md')
             : await fetch('notes/' + id + '.md').then(r=>r.text());
@@ -427,7 +453,16 @@ createApp({
         renderMd();
       }catch(e){
         console.error('加载笔记失败', e);
-        currentMd.value = '# 加载失败\n\n>' + e.message;
+        // 内联显示错误（把所有策略的失败原因都显示出来）
+        var msg = (e && e.message) ? e.message : String(e);
+        currentMd.value =
+          '## ⚠️ 笔记正文加载失败\n\n' +
+          '> **id**：`' + id + '`\n>\n' +
+          '> **路径**：`notes/' + id + '.md`\n>\n' +
+          '> **错误**：`' + msg + '`\n\n' +
+          '请截图反馈，以便定位修复。';
+        await nextTick();
+        renderMd();
       }finally{
         loadingMd.value = false;
       }

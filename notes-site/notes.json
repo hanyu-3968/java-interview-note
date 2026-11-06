@@ -313,5 +313,14 @@
     "tags": ["LangChain", "Agent", "create_agent", "Function Calling", "RAG", "Tools", "bind_tools", "checkpointer", "mock_llm", "new-api网关", "Python基础"],
     "summary": "四个目录总览 + demo项目完整Agent实战（网关+双stream_mode+AST白名单计算器）+ LangChain六大概念 + Agent三档对比 + Tools四要素 + RAG切分嵌入 + 10道面试问答 + 10个记忆锚点。",
     "file": "notes/ai-demo-summary.html"
+  },
+  {
+    "id": "rag",
+    "title": "RAG检索增强生成：从切分到重排的完整链路",
+    "category": "AI",
+    "cover": "assets/images/rag/cover.webp",
+    "tags": ["RAG", "检索增强", "向量数据库", "Embedding", "Rerank", "混合检索", "HyDE", "语义缓存", "Chunk切分", "Query改写", "上下文压缩", "BGE-M3"],
+    "summary": "RAG动机+6步流程+向量库选型+企业级架构+Chunk切分+召回优化(混合检索/Rerank)+成本治理+语义缓存+扫描PDF跨页表格+Query改写+上下文压缩+Embedding选型。",
+    "file": "notes/rag.html"
   }
 ]
