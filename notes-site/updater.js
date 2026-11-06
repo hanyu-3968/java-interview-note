@@ -11,11 +11,12 @@
   'use strict';
 
   // 多个更新源（按优先级排序，逐个尝试，哪个通用哪个）
-  // 都是 GitHub 仓库的镜像，push 后自动同步，无需额外操作
+  // GitHub Raw 优先：实时反映 git 最新 commit，不受 CDN 同步延迟影响
+  // jsDelivr 系列作备份：GitHub Raw 偶尔限流时兜底
   var REMOTE_SOURCES = [
-    'https://cdn.jsdelivr.net/gh/hanyu-3968/java-interview-note@main/notes-site/',        // jsDelivr 主源（快，偶尔抽风）
+    'https://raw.githubusercontent.com/hanyu-3968/java-interview-note/main/notes-site/',   // GitHub Raw 主源（实时，慢但准）
+    'https://cdn.jsdelivr.net/gh/hanyu-3968/java-interview-note@main/notes-site/',        // jsDelivr 备源（快，但有同步延迟）
     'https://fastly.jsdelivr.net/gh/hanyu-3968/java-interview-note@main/notes-site/',     // Fastly jsDelivr 镜像
-    'https://raw.githubusercontent.com/hanyu-3968/java-interview-note/main/notes-site/',   // GitHub Raw 兜底（慢但稳）
     'https://gcore.jsdelivr.net/gh/hanyu-3968/java-interview-note@main/notes-site/'       // gcore jsDelivr 镜像
   ];
   var MANIFEST_FILE = 'manifest.json';
