@@ -6,5 +6,13 @@
     "summary": "训练三阶段 → Transformer 组件 → 推理优化 → 对齐与可控生成 → 应用层扩展，覆盖大模型面试高频题。",
     "tags": ["LLM", "Transformer", "Attention", "KV Cache", "RLHF", "DPO", "MoE", "量化"],
     "file": "notes/daily/2026-11-05-llm-model.md"
+  },
+  {
+    "id": "2026-11-06-rag",
+    "date": "2026-11-06",
+    "title": "RAG 检索增强生成：从切分到重排的完整链路",
+    "summary": "RAG动机+6步流程+向量库选型+企业级架构+Chunk切分+召回优化(混合检索/Rerank)+成本治理+语义缓存+扫描PDF跨页表格+Query改写+上下文压缩+Embedding选型。",
+    "tags": ["RAG", "检索增强", "向量数据库", "Embedding", "Rerank", "混合检索", "HyDE", "语义缓存", "Chunk切分", "Query改写", "上下文压缩", "BGE-M3"],
+    "file": "notes/daily/2026-11-06-rag.md"
   }
 ]

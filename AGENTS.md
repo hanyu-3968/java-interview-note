@@ -19,6 +19,35 @@
 
 > **本指南主要覆盖第一步。** 第二步的规格在 §9。
 
+### 0.1 笔记默认存放规则（重要）
+
+**从 2026-11-06 起，新笔记默认放「每日笔记」目录，不再放 `notes/` 根目录。**
+
+| 项 | 规则 |
+|---|---|
+| 默认目录 | `notes-site/notes/daily/` |
+| 文件名 | `{YYYY-MM-DD}-{英文kebab-name}.md`，如 `2026-11-06-rag.md` |
+| 元数据 | 写入 `daily.json`（带 `date` 字段），**不写** `notes.json` |
+| 元数据字段 | `id` / `date` / `title` / `summary` / `tags` / `file`（见 §4.2 下方 daily.json 示例） |
+| manifest.json | `files[]` 加 `notes/daily/{文件名}.md` 和 `daily.json`，版本号 +1 |
+| 阅读器 | `daily.html`（按日期年月分组，组内按日期倒序） |
+
+**为什么默认放每日笔记**：每日笔记分区（`daily.html`）按日期自动分组、滚动浏览，适合持续学习记录；`notes/` 根目录的 `notes.json` 是按 category 分类的「书架」，适合长期沉淀的体系化笔记。日常新笔记走每日笔记，需要时再人工归类到书架。
+
+**例外**：用户明确说「放到书架/某个分类/notes.json」时，按用户要求放 `notes/` 根目录并写 `notes.json`。
+
+**daily.json 单条示例**：
+```json
+{
+  "id": "2026-11-06-rag",
+  "date": "2026-11-06",
+  "title": "RAG 检索增强生成：从切分到重排的完整链路",
+  "summary": "一句话概括，用于列表展示。",
+  "tags": ["RAG", "检索增强", "向量数据库"],
+  "file": "notes/daily/2026-11-06-rag.md"
+}
+```
+
 ---
 
 ## 1. 目录结构
